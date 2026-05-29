@@ -73,6 +73,12 @@ func (c *LiteLLMConfig) Validate() error {
 	names := map[string]bool{}
 	for _, entry := range c.ModelList {
 		names[entry.ModelName] = true
+		if entry.LiteLLMParams == nil {
+			return fmt.Errorf("model tier %q is missing litellm_params", entry.ModelName)
+		}
+		if value, ok := entry.LiteLLMParams["model"]; !ok || fmt.Sprint(value) == "" {
+			return fmt.Errorf("model tier %q is missing litellm_params.model", entry.ModelName)
+		}
 	}
 	for _, required := range RequiredModelNames {
 		if !names[required] {
