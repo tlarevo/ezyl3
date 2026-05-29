@@ -176,11 +176,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refresh()
 			m.message = "refreshed"
 		case keypkg.Matches(msg, keys.start):
-			m.serviceResults, m.message = runServiceAction(m.deps.services.Start)
+			m.runServiceActionAndRefresh(m.deps.services.Start)
 		case keypkg.Matches(msg, keys.stop):
-			m.serviceResults, m.message = runServiceAction(m.deps.services.Stop)
+			m.runServiceActionAndRefresh(m.deps.services.Stop)
 		case keypkg.Matches(msg, keys.restart):
-			m.serviceResults, m.message = runServiceAction(m.deps.services.Restart)
+			m.runServiceActionAndRefresh(m.deps.services.Restart)
 		}
 	}
 	return m, nil
@@ -323,6 +323,15 @@ func runServiceAction(action func() ([]core.ServiceActionResult, error)) ([]core
 	return results, "service action complete"
 }
 
+func (m *model) runServiceActionAndRefresh(action func() ([]core.ServiceActionResult, error)) {
+	results, message := runServiceAction(action)
+	m.serviceResults = results
+	m.message = message
+	if status, err := m.deps.services.Status(); err == nil {
+		m.serviceResults = status
+	}
+}
+
 func loadProfile(runtimePath string) *core.Profile {
 	profile, err := core.LoadProfileFromRuntime(runtimePath)
 	if err != nil {
@@ -379,7 +388,7 @@ func (m model) setupProgress() setupProgress {
 	configOK := doctorCheckOK(m.report, "config.yaml") || m.modelErr == nil
 	secretsOK := doctorCheckOK(m.report, "LITELLM_MASTER_KEY")
 	serviceOK := serviceState(m.serviceResults, "litellm") == core.ServiceStateRunning
-	cursorOK := profileOK && configOK && secretsOK && serviceOK
+	cursorOK := cursorSettingsOK(m.report)
 
 	items := []setupProgressItem{
 		{name: "Profile", state: boolState(profileOK), detail: profileDetail(m.profile)},
@@ -562,6 +571,10 @@ func doctorCheckOK(report core.DoctorReport, name string) bool {
 	return false
 }
 
+func cursorSettingsOK(report core.DoctorReport) bool {
+	return doctorCheckOK(report, "Cursor settings")
+}
+
 func serviceState(results []core.ServiceActionResult, service string) string {
 	for _, result := range results {
 		if result.Service == service {
@@ -620,7 +633,7 @@ func cursorDetail(ok bool) string {
 	if ok {
 		return "Cursor settings ready"
 	}
-	return "waiting on setup"
+	return "run ezyl3 cursor settings"
 }
 
 func pathsForRuntime(runtime core.Runtime) core.ProfilePaths {
