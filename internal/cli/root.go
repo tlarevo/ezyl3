@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"ezyl3/internal/tui"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 type options struct {
@@ -179,6 +181,7 @@ func setupCommand(opts *options) *cobra.Command {
 	var hfBillTo string
 	var masterKey string
 	var skipPythonDeps bool
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Create a managed ezyl3 runtime profile",
@@ -187,35 +190,50 @@ func setupCommand(opts *options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			normalizedDomain := ""
-			if strings.TrimSpace(domain) != "" {
-				normalizedDomain, err = core.NormalizeNgrokDomain(domain)
-				if err != nil {
-					return err
+			if isInteractive(cmd) {
+				if !cmd.Flags().Changed("domain") {
+					domain, err = readPrompt(cmd, "ngrok domain (optional, leave blank for local-only): ")
+					if err != nil {
+						return err
+					}
 				}
-			}
-			if strings.TrimSpace(masterKey) == "" {
-				masterKey, err = core.GenerateMasterKey()
-				if err != nil {
-					return err
+				if !cmd.Flags().Changed("hf-token") {
+					hfToken, err = readSecretPrompt(cmd, "Hugging Face token (optional): ")
+					if err != nil {
+						return err
+					}
+				}
+				if !cmd.Flags().Changed("ollama-api-key") {
+					ollamaKey, err = readSecretPrompt(cmd, "Ollama API key (optional): ")
+					if err != nil {
+						return err
+					}
+				}
+				if !cmd.Flags().Changed("hf-bill-to") {
+					hfBillTo, err = readPrompt(cmd, "Hugging Face billing org (optional): ")
+					if err != nil {
+						return err
+					}
+				}
+				if !cmd.Flags().Changed("master-key") {
+					masterKey, err = readSecretPrompt(cmd, "LiteLLM master key (optional, generated if blank): ")
+					if err != nil {
+						return err
+					}
 				}
 			}
 			secrets := core.Secrets{HFToken: hfToken, HFBillTo: hfBillTo, OllamaAPIKey: ollamaKey, LiteLLMMasterKey: masterKey}
-			profile, err := core.CreateManagedProfile(paths, secrets, normalizedDomain)
+			result, err := core.RunSetup(core.SetupOptions{
+				Paths:          paths,
+				Domain:         domain,
+				Secrets:        secrets,
+				Force:          force,
+				SkipPythonDeps: skipPythonDeps,
+			}, core.SetupDependencies{})
 			if err != nil {
 				return err
 			}
-			if err := core.WriteLaunchAgents(paths, normalizedDomain, profile.Port); err != nil {
-				return err
-			}
-			if !skipPythonDeps {
-				if err := core.InstallPythonDeps(profile.RuntimeDir); err != nil {
-					return err
-				}
-			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "created managed profile at %s\n", profile.RuntimeDir)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "wrote LaunchAgents under %s\n", filepath.Dir(paths.LaunchAgentPath("litellm")))
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Cursor API key: set in .env (hidden)\n")
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), result.Summary())
 			return nil
 		},
 	}
@@ -225,7 +243,36 @@ func setupCommand(opts *options) *cobra.Command {
 	cmd.Flags().StringVar(&hfBillTo, "hf-bill-to", "", "Hugging Face org billing slug")
 	cmd.Flags().StringVar(&masterKey, "master-key", "", "LiteLLM master key; generated if omitted")
 	cmd.Flags().BoolVar(&skipPythonDeps, "skip-python-deps", false, "skip venv creation and LiteLLM pip install")
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing managed profile")
 	return cmd
+}
+
+func isInteractive(cmd *cobra.Command) bool {
+	file, ok := cmd.InOrStdin().(*os.File)
+	return ok && term.IsTerminal(int(file.Fd()))
+}
+
+func readPrompt(cmd *cobra.Command, label string) (string, error) {
+	_, _ = fmt.Fprint(cmd.ErrOrStderr(), label)
+	value, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	return strings.TrimSpace(value), nil
+}
+
+func readSecretPrompt(cmd *cobra.Command, label string) (string, error) {
+	file, ok := cmd.InOrStdin().(*os.File)
+	if !ok {
+		return readPrompt(cmd, label)
+	}
+	_, _ = fmt.Fprint(cmd.ErrOrStderr(), label)
+	value, err := term.ReadPassword(int(file.Fd()))
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr())
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(value)), nil
 }
 
 func serviceCommand(opts *options) *cobra.Command {
