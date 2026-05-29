@@ -109,7 +109,8 @@ flowchart TD
 - Add log reader/follower tests using temp log files and cancellable contexts instead of spawning `tail`.
 - Add TUI model tests at the state/update layer for navigation, refresh, selected profile display, setup state rendering, and service action messages. Do not snapshot terminal styling unless a small golden test is demonstrably useful.
 - Keep existing config, profile, ngrok, secret, and CLI tests. Extend them only where setup-polish behavior touches the same public surface.
-- Run `/opt/homebrew/bin/go test ./...` as the required verification command for this phase.
+- Run `go test ./...` as the required verification command for this phase.
+- If Go is installed through Homebrew in the current local environment, `/opt/homebrew/bin/go test ./...` is an acceptable equivalent.
 - For live checks against local LiteLLM or ngrok, treat network/service probing as optional manual verification because sandbox permissions may block localhost or public tunnel access.
 
 ## Out of Scope
@@ -120,7 +121,7 @@ flowchart TD
 - Building a web dashboard.
 - Automatically editing Cursor settings files.
 - Printing or exporting secret values for convenience.
-- Migrating or rewriting the existing external runtime at `/Users/tharinduabeydeera/litellm-cursor`.
+- Migrating or rewriting an existing external runtime, for example `<user-home>/litellm-cursor`.
 - Replacing LiteLLM, ngrok, Cobra, Bubble Tea, or the XDG-style managed profile layout.
 
 ## Further Notes
