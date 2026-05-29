@@ -13,6 +13,7 @@ import (
 
 type fakeServices struct {
 	started bool
+	status  []core.ServiceActionResult
 }
 
 func (f *fakeServices) Start() ([]core.ServiceActionResult, error) {
@@ -29,6 +30,9 @@ func (f *fakeServices) Restart() ([]core.ServiceActionResult, error) {
 }
 
 func (f *fakeServices) Status() ([]core.ServiceActionResult, error) {
+	if f.status != nil {
+		return f.status, nil
+	}
 	return []core.ServiceActionResult{{Service: "litellm", Action: "status", State: core.ServiceStateRunning}}, nil
 }
 
@@ -41,13 +45,76 @@ func TestTUIViewNavigatesSetupCompanionTabs(t *testing.T) {
 		services: &fakeServices{},
 	})
 
-	if !strings.Contains(m.View(), "Overview") || !strings.Contains(m.View(), "create a managed profile") {
+	if !strings.Contains(m.View(), "Overview") || !strings.Contains(m.View(), "Run ezyl3 setup") {
 		t.Fatalf("overview missing setup guidance:\n%s", m.View())
 	}
 	updated, _ := m.Update(key("tab"))
 	m = updated.(model)
 	if m.activeTab != 1 || !strings.Contains(m.View(), "Profile") {
 		t.Fatalf("tab navigation failed: active=%d view=\n%s", m.activeTab, m.View())
+	}
+}
+
+func TestTUIRendersCommandCenterSidebarAndHelp(t *testing.T) {
+	runtime := core.NewRuntime(t.TempDir())
+	m := newModelWithDeps(runtime, dependencies{
+		doctor:   func(core.Runtime) core.DoctorReport { return core.DoctorReport{} },
+		services: &fakeServices{},
+	})
+
+	view := m.View()
+	for _, want := range []string{"ezyl3", "Navigation", "> Overview", "Profile", "Services", "Models", "Doctor", "Logs", "Keys", "tab next", "r refresh", "q quit"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("command-center view missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestTUIOverviewShowsGuidedSetupChecklistWhenIncomplete(t *testing.T) {
+	runtime := core.NewRuntime(t.TempDir())
+	m := newModelWithDeps(runtime, dependencies{
+		doctor: func(core.Runtime) core.DoctorReport {
+			return core.DoctorReport{Checks: []core.Check{
+				{Name: "config.yaml", OK: false, Detail: "missing config.yaml; run ezyl3 setup"},
+				{Name: "LITELLM_MASTER_KEY", OK: false, Detail: "empty"},
+			}}
+		},
+		services: &fakeServices{status: []core.ServiceActionResult{
+			{Service: "litellm", State: core.ServiceStateMissing, Detail: "missing LaunchAgent"},
+			{Service: "ngrok", State: core.ServiceStateNotConfigured, Detail: "not configured"},
+		}},
+	})
+
+	view := m.View()
+	for _, want := range []string{"Setup Progress", "Profile", "Config", "Secrets", "Services", "Cursor", "missing", "not configured", "Next Action", "Run ezyl3 setup"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("guided setup view missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestTUIOverviewShowsReadySummaryWhenHealthy(t *testing.T) {
+	runtime := core.NewRuntime(t.TempDir())
+	writeTestProfile(t, runtime, core.ProfileModeManaged)
+	if err := os.WriteFile(filepath.Join(runtime.Path, "config.yaml"), []byte("model_list: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModelWithDeps(runtime, dependencies{
+		doctor: func(core.Runtime) core.DoctorReport {
+			return core.DoctorReport{Checks: []core.Check{
+				{Name: "config.yaml", OK: true, Detail: "found"},
+				{Name: "LITELLM_MASTER_KEY", OK: true, Detail: "set"},
+				{Name: "LiteLLM liveliness", OK: true, Detail: "200 OK"},
+			}}
+		},
+		services: &fakeServices{status: []core.ServiceActionResult{{Service: "litellm", State: core.ServiceStateRunning}}},
+	})
+
+	view := m.View()
+	for _, want := range []string{"Bridge Status", "ready", "Setup Progress", "5/5", "Next Action", "Cursor settings ready"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("ready overview missing %q:\n%s", want, view)
+		}
 	}
 }
 
@@ -86,6 +153,9 @@ func TestTUIServiceActionUpdatesStateMessage(t *testing.T) {
 	if !strings.Contains(m.View(), "litellm") || !strings.Contains(m.View(), core.ServiceStateLoaded) {
 		t.Fatalf("service view missing action result:\n%s", m.View())
 	}
+	if !strings.Contains(m.View(), "s start") || !strings.Contains(m.View(), "x stop") || !strings.Contains(m.View(), "k restart") {
+		t.Fatalf("service view missing action hints:\n%s", m.View())
+	}
 }
 
 func TestTUILoadsProfileJSON(t *testing.T) {
@@ -110,6 +180,20 @@ func TestTUILoadsProfileJSON(t *testing.T) {
 
 	if !strings.Contains(m.View(), "work") || !strings.Contains(m.View(), "external profile") {
 		t.Fatalf("profile view did not load profile.json:\n%s", m.View())
+	}
+}
+
+func writeTestProfile(t *testing.T, runtime core.Runtime, mode string) {
+	t.Helper()
+	profile := `{
+  "name": "default",
+  "mode": "` + mode + `",
+  "runtime_dir": "` + runtime.Path + `",
+  "port": 4400,
+  "tunnel_provider": "ngrok"
+}`
+	if err := os.WriteFile(filepath.Join(runtime.Path, "profile.json"), []byte(profile), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
