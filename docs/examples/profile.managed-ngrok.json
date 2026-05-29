@@ -1,0 +1,8 @@
+{
+  "name": "work",
+  "mode": "managed",
+  "runtime_dir": "/Users/you/.local/share/ezyl3/profiles/work",
+  "port": 4400,
+  "tunnel_provider": "ngrok",
+  "domain": "work.ngrok-free.dev"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "existing",
+  "mode": "external",
+  "runtime_dir": "/Users/you/litellm-cursor",
+  "port": 4400,
+  "tunnel_provider": "ngrok",
+  "domain": "existing.ngrok-free.dev"
+}

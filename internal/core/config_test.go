@@ -90,3 +90,19 @@ func TestConfigValidationRejectsFallbackToUnknownModel(t *testing.T) {
 		t.Fatalf("Validate error = %v, want missing fallback", err)
 	}
 }
+
+func TestConfigValidationIdentifiesTierWithMissingProviderModel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	bad := strings.Replace(sampleLiteLLMConfig, "      model: huggingface/deepseek-ai/DeepSeek-V4-Flash\n", "", 1)
+	if err := os.WriteFile(path, []byte(bad), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadLiteLLMConfig(path)
+	if err != nil {
+		t.Fatalf("LoadLiteLLMConfig returned error: %v", err)
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "litellm-simple") || !strings.Contains(err.Error(), "model") {
+		t.Fatalf("Validate error = %v, want tier and missing model", err)
+	}
+}

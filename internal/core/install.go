@@ -77,7 +77,7 @@ func CreateManagedProfile(paths ProfilePaths, secrets Secrets, domain string) (P
 		return Profile{}, err
 	}
 	profile := Profile{Name: paths.Profile, Mode: ProfileModeManaged, RuntimeDir: paths.ProfileDir, Port: 4400, TunnelProvider: "ngrok", Domain: domain, Paths: paths}
-	if err := writeJSON(filepath.Join(paths.ProfileDir, "metadata.json"), profile, 0o644); err != nil {
+	if err := WriteProfileFile(paths.ProfileDir, profile); err != nil {
 		return Profile{}, err
 	}
 	return profile, nil

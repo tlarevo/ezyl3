@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestImportExternalProfileWritesMetadataWithoutMutatingSource(t *testing.T) {
+func TestImportExternalProfileWritesProfileJSONWithoutMutatingSource(t *testing.T) {
 	home := t.TempDir()
 	source := filepath.Join(home, "litellm-cursor")
 	if err := os.MkdirAll(source, 0o755); err != nil {
@@ -29,10 +29,33 @@ func TestImportExternalProfileWritesMetadataWithoutMutatingSource(t *testing.T) 
 	if profile.RuntimeDir != source {
 		t.Fatalf("RuntimeDir = %q", profile.RuntimeDir)
 	}
-	if _, err := os.Stat(filepath.Join(source, "metadata.json")); !os.IsNotExist(err) {
-		t.Fatalf("source was mutated; metadata exists or stat errored: %v", err)
+	if _, err := os.Stat(filepath.Join(source, "profile.json")); !os.IsNotExist(err) {
+		t.Fatalf("source was mutated; profile.json exists or stat errored: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(profile.Paths.ProfileDir, "metadata.json")); err != nil {
-		t.Fatalf("metadata was not written in managed profile dir: %v", err)
+	if _, err := os.Stat(filepath.Join(profile.Paths.ProfileDir, "profile.json")); err != nil {
+		t.Fatalf("profile.json was not written in managed profile dir: %v", err)
+	}
+}
+
+func TestLoadProfileFromRuntimeFallsBackToLegacyMetadata(t *testing.T) {
+	runtime := t.TempDir()
+	legacy := Profile{
+		Name:           "legacy",
+		Mode:           ProfileModeManaged,
+		RuntimeDir:     runtime,
+		Port:           4400,
+		TunnelProvider: "ngrok",
+		Domain:         "legacy.ngrok-free.dev",
+	}
+	if err := writeJSON(filepath.Join(runtime, "metadata.json"), legacy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	profile, err := LoadProfileFromRuntime(runtime)
+	if err != nil {
+		t.Fatalf("LoadProfileFromRuntime returned error: %v", err)
+	}
+	if profile.Name != "legacy" || profile.Domain != "legacy.ngrok-free.dev" {
+		t.Fatalf("profile = %#v", profile)
 	}
 }

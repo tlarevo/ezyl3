@@ -85,6 +85,60 @@ func TestModelsSetUpdatesOnlySelectedTier(t *testing.T) {
 	}
 }
 
+func TestSetupCreatesLocalOnlyProfileWithoutLeakingSecrets(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	out, err := execute(
+		"setup",
+		"--skip-python-deps",
+		"--hf-token", "hf_secret",
+		"--ollama-api-key", "ollama_secret",
+	)
+	if err != nil {
+		t.Fatalf("setup returned error: %v\n%s", err, out)
+	}
+
+	runtime := filepath.Join(home, ".local", "share", "ezyl3", "profiles", "default")
+	for _, path := range []string{"config.yaml", ".env", "run-proxy.sh", "profile.json"} {
+		if _, err := os.Stat(filepath.Join(runtime, path)); err != nil {
+			t.Fatalf("expected %s to exist: %v", path, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, "Library", "LaunchAgents", "com.ezyl3.default.litellm.plist")); err != nil {
+		t.Fatalf("expected litellm LaunchAgent: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "Library", "LaunchAgents", "com.ezyl3.default.ngrok.plist")); !os.IsNotExist(err) {
+		t.Fatalf("ngrok LaunchAgent should not exist for local-only setup: %v", err)
+	}
+	for _, leaked := range []string{"hf_secret", "ollama_secret", "sk-cursor-"} {
+		if strings.Contains(out, leaked) {
+			t.Fatalf("setup leaked %q:\n%s", leaked, out)
+		}
+	}
+	for _, want := range []string{"Base URL: http://127.0.0.1:4400/v1", "LiteLLM master key: set", runtime} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("setup output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSetupRequiresForceToOverwriteManagedProfile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if out, err := execute("setup", "--skip-python-deps"); err != nil {
+		t.Fatalf("initial setup returned error: %v\n%s", err, out)
+	}
+	out, err := execute("setup", "--skip-python-deps")
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("second setup error = %v, output = %s", err, out)
+	}
+	if out, err := execute("setup", "--skip-python-deps", "--force"); err != nil {
+		t.Fatalf("forced setup returned error: %v\n%s", err, out)
+	}
+}
+
 func execute(args ...string) (string, error) {
 	var out bytes.Buffer
 	cmd := NewRootCommand()

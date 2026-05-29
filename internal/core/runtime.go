@@ -57,8 +57,8 @@ func Doctor(runtime Runtime) DoctorReport {
 		)
 	}
 	checks = append(checks,
-		httpCheck("LiteLLM liveliness", fmt.Sprintf("http://127.0.0.1:%d/health/liveliness", runtime.Port), ""),
-		httpCheck("ngrok inspector", "http://127.0.0.1:4040/api/tunnels", ""),
+		httpCheck("LiteLLM liveliness", fmt.Sprintf("http://127.0.0.1:%d/health/liveliness", runtime.Port), "LiteLLM is not reachable; run ezyl3 service start or inspect ezyl3 logs litellm"),
+		httpCheck("ngrok inspector", "http://127.0.0.1:4040/api/tunnels", "ngrok is not reachable; local-only profiles can ignore this"),
 	)
 	if domain, err := DetectNgrokDomain(runtime.Path); err == nil {
 		checks = append(checks, httpCheck("tunnel liveliness", "https://"+domain+"/health/liveliness", "domain: "+domain))
@@ -72,19 +72,22 @@ func (r DoctorReport) JSON() ([]byte, error) {
 
 func CursorSettings(runtime Runtime) (string, error) {
 	domain, err := DetectNgrokDomain(runtime.Path)
-	if err != nil {
-		return "", err
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d/v1", runtime.Port)
+	if err == nil {
+		baseURL = "https://" + domain + "/v1"
 	}
 	secrets, err := ReadSecrets(filepath.Join(runtime.Path, ".env"))
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Base URL: https://%s/v1\nAPI key: %s\nModels: litellm-auto, litellm-simple, litellm-medium, litellm-complex, litellm-reasoning\n", domain, presence(secrets.LiteLLMMasterKey)), nil
+	return fmt.Sprintf("Base URL: %s\nAPI key: %s\nModels: litellm-auto, litellm-simple, litellm-medium, litellm-complex, litellm-reasoning\n", baseURL, presence(secrets.LiteLLMMasterKey)), nil
 }
 
 func DetectNgrokDomain(runtimePath string) (string, error) {
+	if profile, err := LoadProfileFromRuntime(runtimePath); err == nil && strings.TrimSpace(profile.Domain) != "" {
+		return NormalizeNgrokDomain(profile.Domain)
+	}
 	candidates := []string{
-		filepath.Join(runtimePath, "metadata.json"),
 		filepath.Join(runtimePath, "logs", "ngrok.out.log"),
 		filepath.Join(runtimePath, "logs", "ngrok.err.log"),
 	}
@@ -117,12 +120,19 @@ func domainFromFile(path string) (string, error) {
 
 func fileCheck(path string) Check {
 	_, err := os.Stat(path)
-	return Check{Name: filepath.Base(path), OK: err == nil, Detail: redactPathErr(path, err)}
+	return Check{Name: filepath.Base(path), OK: err == nil, Detail: setupFileDetail(filepath.Base(path), err)}
 }
 
 func dirCheck(path string) Check {
 	info, err := os.Stat(path)
-	return Check{Name: filepath.Base(path), OK: err == nil && info.IsDir(), Detail: redactPathErr(path, err)}
+	ok := err == nil && info.IsDir()
+	if ok {
+		return Check{Name: filepath.Base(path), OK: true, Detail: "found"}
+	}
+	if err == nil {
+		return Check{Name: filepath.Base(path), OK: false, Detail: "not a directory; run ezyl3 setup --force to recreate the managed profile"}
+	}
+	return Check{Name: filepath.Base(path), OK: false, Detail: setupFileDetail(filepath.Base(path), err)}
 }
 
 func httpCheck(name, target, detail string) Check {
@@ -141,9 +151,12 @@ func httpCheck(name, target, detail string) Check {
 	return Check{Name: name, OK: resp.StatusCode >= 200 && resp.StatusCode < 300, Detail: detail}
 }
 
-func redactPathErr(path string, err error) string {
+func setupFileDetail(name string, err error) string {
 	if err == nil {
-		return path
+		return "found"
+	}
+	if os.IsNotExist(err) {
+		return fmt.Sprintf("missing %s; run ezyl3 setup to create a managed profile or ezyl3 import <runtime-path>", name)
 	}
 	return err.Error()
 }
