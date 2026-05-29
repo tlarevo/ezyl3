@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -305,22 +304,15 @@ func logsCommand(opts *options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if args[0] != "litellm" && args[0] != "ngrok" {
-				return fmt.Errorf("unknown log target %q", args[0])
-			}
-			path := filepath.Join(runtime.Path, "logs", args[0]+".out.log")
+			reader := core.FileLogReader{Runtime: runtime}
 			if follow {
-				tail := exec.Command("tail", "-f", path)
-				tail.Stdout = cmd.OutOrStdout()
-				tail.Stderr = cmd.ErrOrStderr()
-				return tail.Run()
+				return reader.Follow(cmd.Context(), args[0], cmd.OutOrStdout())
 			}
-			file, err := os.Open(path)
+			data, err := reader.Read(args[0])
 			if err != nil {
 				return err
 			}
-			defer file.Close()
-			_, err = io.Copy(cmd.OutOrStdout(), file)
+			_, err = cmd.OutOrStdout().Write(data)
 			return err
 		},
 	}
@@ -374,32 +366,27 @@ func envMap() map[string]string {
 }
 
 func runServiceAction(cmd *cobra.Command, action string, paths core.ProfilePaths) error {
-	uid := os.Getuid()
-	gui := fmt.Sprintf("gui/%d", uid)
-	commands := [][]string{}
+	manager := core.ServiceManager{Paths: paths}
+	var results []core.ServiceActionResult
+	var err error
 	switch action {
 	case "start":
-		commands = [][]string{{"bootstrap", gui, paths.LaunchAgentPath("litellm")}, {"bootstrap", gui, paths.LaunchAgentPath("ngrok")}}
+		results, err = manager.Start()
 	case "stop":
-		commands = [][]string{{"bootout", gui, paths.LaunchAgentPath("ngrok")}, {"bootout", gui, paths.LaunchAgentPath("litellm")}}
+		results, err = manager.Stop()
 	case "restart":
-		commands = [][]string{{"kickstart", "-k", gui + "/" + paths.LaunchAgentLabel("litellm")}, {"kickstart", "-k", gui + "/" + paths.LaunchAgentLabel("ngrok")}}
+		results, err = manager.Restart()
 	case "status":
-		commands = [][]string{{"print", gui + "/" + paths.LaunchAgentLabel("litellm")}, {"print", gui + "/" + paths.LaunchAgentLabel("ngrok")}}
+		results, err = manager.Status()
 	}
-	for _, args := range commands {
-		if err := runLaunchctl(cmd, args...); err != nil {
-			return err
+	for _, result := range results {
+		detail := result.Detail
+		if detail != "" {
+			detail = " " + detail
 		}
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-8s %-14s %s%s\n", result.Service, result.State, result.Action, detail)
 	}
-	return nil
-}
-
-func runLaunchctl(cmd *cobra.Command, args ...string) error {
-	launchctl := exec.Command("launchctl", args...)
-	launchctl.Stdout = cmd.OutOrStdout()
-	launchctl.Stderr = cmd.ErrOrStderr()
-	return launchctl.Run()
+	return err
 }
 
 func PrintJSON(w io.Writer, value any) error {
