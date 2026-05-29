@@ -86,9 +86,33 @@ func TestTUIOverviewShowsGuidedSetupChecklistWhenIncomplete(t *testing.T) {
 	})
 
 	view := m.View()
-	for _, want := range []string{"Setup Progress", "Profile", "Config", "Secrets", "Services", "Cursor", "missing", "not configured", "Next Action", "Run ezyl3 setup"} {
+	for _, want := range []string{"Setup Guide", "0%", "Profile", "Config", "Secrets", "Services", "Cursor", "missing", "not configured", "Current Step", "Why it matters", "How to fix", "Next Action", "Run ezyl3 setup"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("guided setup view missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestTUIOverviewFocusesServiceStepWhenSetupFilesAreReady(t *testing.T) {
+	runtime := core.NewRuntime(t.TempDir())
+	writeTestProfile(t, runtime, core.ProfileModeManaged)
+	if err := os.WriteFile(filepath.Join(runtime.Path, "config.yaml"), []byte("model_list: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModelWithDeps(runtime, dependencies{
+		doctor: func(core.Runtime) core.DoctorReport {
+			return core.DoctorReport{Checks: []core.Check{
+				{Name: "config.yaml", OK: true, Detail: "found"},
+				{Name: "LITELLM_MASTER_KEY", OK: true, Detail: "set"},
+			}}
+		},
+		services: &fakeServices{status: []core.ServiceActionResult{{Service: "litellm", State: core.ServiceStateStopped, Detail: "stopped"}}},
+	})
+
+	view := m.View()
+	for _, want := range []string{"Setup Guide", "60%", "3/5 complete", "Current Step: Services", "Press s to start LiteLLM", "LiteLLM must be running"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("service setup step missing %q:\n%s", want, view)
 		}
 	}
 }
@@ -111,7 +135,7 @@ func TestTUIOverviewShowsReadySummaryWhenHealthy(t *testing.T) {
 	})
 
 	view := m.View()
-	for _, want := range []string{"Bridge Status", "ready", "Setup Progress", "5/5", "Next Action", "Cursor settings ready"} {
+	for _, want := range []string{"Bridge Status", "ready", "Setup Guide", "100%", "5/5", "Current Step: Complete", "Next Action", "Cursor settings ready"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("ready overview missing %q:\n%s", want, view)
 		}

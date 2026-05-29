@@ -8,6 +8,9 @@ import (
 
 	"ezyl3/internal/core"
 
+	"github.com/charmbracelet/bubbles/help"
+	keypkg "github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -47,6 +50,65 @@ type dependencies struct {
 	services serviceController
 }
 
+type keyMap struct {
+	next     keypkg.Binding
+	previous keypkg.Binding
+	refresh  keypkg.Binding
+	quit     keypkg.Binding
+	start    keypkg.Binding
+	stop     keypkg.Binding
+	restart  keypkg.Binding
+}
+
+func newKeyMap(activeTab int) keyMap {
+	keys := keyMap{
+		next: keypkg.NewBinding(
+			keypkg.WithKeys("tab", "right", "l"),
+			keypkg.WithHelp("tab", "next"),
+		),
+		previous: keypkg.NewBinding(
+			keypkg.WithKeys("shift+tab", "left", "h"),
+			keypkg.WithHelp("shift+tab", "previous"),
+		),
+		refresh: keypkg.NewBinding(
+			keypkg.WithKeys("r"),
+			keypkg.WithHelp("r", "refresh"),
+		),
+		quit: keypkg.NewBinding(
+			keypkg.WithKeys("q", "ctrl+c", "esc"),
+			keypkg.WithHelp("q", "quit"),
+		),
+		start: keypkg.NewBinding(
+			keypkg.WithKeys("s"),
+			keypkg.WithHelp("s", "start"),
+		),
+		stop: keypkg.NewBinding(
+			keypkg.WithKeys("x"),
+			keypkg.WithHelp("x", "stop"),
+		),
+		restart: keypkg.NewBinding(
+			keypkg.WithKeys("k"),
+			keypkg.WithHelp("k", "restart"),
+		),
+	}
+	servicesActive := activeTab == servicesTab
+	keys.start.SetEnabled(servicesActive)
+	keys.stop.SetEnabled(servicesActive)
+	keys.restart.SetEnabled(servicesActive)
+	return keys
+}
+
+func (k keyMap) ShortHelp() []keypkg.Binding {
+	return []keypkg.Binding{k.next, k.refresh, k.quit, k.start, k.stop, k.restart}
+}
+
+func (k keyMap) FullHelp() [][]keypkg.Binding {
+	return [][]keypkg.Binding{
+		{k.next, k.previous, k.refresh, k.quit},
+		{k.start, k.stop, k.restart},
+	}
+}
+
 type model struct {
 	runtime        core.Runtime
 	report         core.DoctorReport
@@ -57,6 +119,8 @@ type model struct {
 	logPreview     string
 	message        string
 	activeTab      int
+	setupBar       progress.Model
+	help           help.Model
 	deps           dependencies
 }
 
@@ -76,7 +140,19 @@ func newModelWithDeps(runtime core.Runtime, deps dependencies) model {
 	if deps.services == nil {
 		deps.services = core.ServiceManager{Paths: pathsForRuntime(runtime)}
 	}
-	m := model{runtime: runtime, deps: deps}
+	helpView := help.New()
+	helpView.Width = 82
+	helpView.ShortSeparator = "  "
+	m := model{
+		runtime: runtime,
+		setupBar: progress.New(
+			progress.WithWidth(46),
+			progress.WithSolidFill("#5FD7AF"),
+			progress.WithFillCharacters('=', '-'),
+		),
+		help: helpView,
+		deps: deps,
+	}
 	m.refresh()
 	return m
 }
@@ -88,28 +164,23 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c", "esc":
+		keys := newKeyMap(m.activeTab)
+		switch {
+		case keypkg.Matches(msg, keys.quit):
 			return m, tea.Quit
-		case "tab", "right", "l":
+		case keypkg.Matches(msg, keys.next):
 			m.activeTab = (m.activeTab + 1) % len(tabs)
-		case "shift+tab", "left", "h":
+		case keypkg.Matches(msg, keys.previous):
 			m.activeTab = (m.activeTab + len(tabs) - 1) % len(tabs)
-		case "r":
+		case keypkg.Matches(msg, keys.refresh):
 			m.refresh()
 			m.message = "refreshed"
-		case "s":
-			if m.activeTab == servicesTab {
-				m.serviceResults, m.message = runServiceAction(m.deps.services.Start)
-			}
-		case "x":
-			if m.activeTab == servicesTab {
-				m.serviceResults, m.message = runServiceAction(m.deps.services.Stop)
-			}
-		case "k":
-			if m.activeTab == servicesTab {
-				m.serviceResults, m.message = runServiceAction(m.deps.services.Restart)
-			}
+		case keypkg.Matches(msg, keys.start):
+			m.serviceResults, m.message = runServiceAction(m.deps.services.Start)
+		case keypkg.Matches(msg, keys.stop):
+			m.serviceResults, m.message = runServiceAction(m.deps.services.Stop)
+		case keypkg.Matches(msg, keys.restart):
+			m.serviceResults, m.message = runServiceAction(m.deps.services.Restart)
 		}
 	}
 	return m, nil
@@ -165,11 +236,7 @@ func (m model) renderSidebar() string {
 }
 
 func (m model) renderHelp() string {
-	help := "Keys: tab next, r refresh, q quit"
-	if m.activeTab == servicesTab {
-		help += ", s start, x stop, k restart"
-	}
-	return mutedStyle.Render(help)
+	return mutedStyle.Render("Keys: " + m.help.View(newKeyMap(m.activeTab)))
 }
 
 func (m model) renderOverview() string {
@@ -180,8 +247,8 @@ func (m model) renderOverview() string {
 	progress := m.setupProgress()
 	return section("Bridge Status",
 		fmt.Sprintf("Status: %s\nRuntime: %s\nProfile mode: %s\nTunnel: %s", progress.overallStatus(), m.runtime.Path, mode, statusText(tunnelState(m.serviceResults))),
-	) + section("Setup Progress",
-		progress.render(),
+	) + section("Setup Guide",
+		progress.render(m.setupBar),
 	) + section("Next Action",
 		progress.nextAction,
 	)
@@ -350,13 +417,95 @@ func (p setupProgress) overallStatus() string {
 	return statusText("warning") + " needs setup"
 }
 
-func (p setupProgress) render() string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%d/%d complete\n", p.completeCount(), len(p.items))
-	for _, item := range p.items {
-		fmt.Fprintf(&b, "%-9s %-16s %s\n", item.name, statusText(item.state), item.detail)
+func (p setupProgress) percent() float64 {
+	if len(p.items) == 0 {
+		return 0
 	}
+	return float64(p.completeCount()) / float64(len(p.items))
+}
+
+func (p setupProgress) render(bar progress.Model) string {
+	var b strings.Builder
+	percent := p.percent()
+	fmt.Fprintf(&b, "%d/%d complete (%d%%)\n", p.completeCount(), len(p.items), int(percent*100+0.5))
+	b.WriteString(bar.ViewAs(percent))
+	b.WriteString("\n\n")
+	current := p.currentStep()
+	for _, item := range p.items {
+		fmt.Fprintf(&b, "%s %-9s %-16s %s\n", setupMarker(item, current.name), item.name, statusText(item.state), item.detail)
+	}
+	fmt.Fprintf(&b, "\nCurrent Step: %s\nWhy it matters: %s\nHow to fix: %s", current.name, current.why, current.how)
 	return b.String()
+}
+
+func (p setupProgress) currentStep() setupGuidance {
+	for _, item := range p.items {
+		if item.state != "ok" {
+			return guidanceForStep(item.name)
+		}
+	}
+	return setupGuidance{
+		name: "Complete",
+		why:  "The bridge has a profile, config, secret, running service, and Cursor settings path.",
+		how:  "Use ezyl3 cursor settings when you need to reconnect Cursor.",
+	}
+}
+
+type setupGuidance struct {
+	name string
+	why  string
+	how  string
+}
+
+func guidanceForStep(name string) setupGuidance {
+	switch name {
+	case "Profile":
+		return setupGuidance{
+			name: "Profile",
+			why:  "ezyl3 needs profile.json before it can manage runtime paths and setup mode.",
+			how:  "Run ezyl3 setup or ezyl3 import <runtime-path>.",
+		}
+	case "Config":
+		return setupGuidance{
+			name: "Config",
+			why:  "LiteLLM needs config.yaml before it can expose model tiers to Cursor.",
+			how:  "Run ezyl3 setup to generate config.yaml and model tiers.",
+		}
+	case "Secrets":
+		return setupGuidance{
+			name: "Secrets",
+			why:  "LiteLLM rejects bridge requests unless the master key is configured.",
+			how:  "Run ezyl3 setup with a master key, or pass --master-key in scripts.",
+		}
+	case "Services":
+		return setupGuidance{
+			name: "Services",
+			why:  "LiteLLM must be running before Cursor can reach the bridge.",
+			how:  "Press s to start LiteLLM from the Services tab.",
+		}
+	case "Cursor":
+		return setupGuidance{
+			name: "Cursor",
+			why:  "Cursor needs the bridge base URL and model names before chat requests route through ezyl3.",
+			how:  "Run ezyl3 cursor settings and copy the values into Cursor.",
+		}
+	default:
+		return setupGuidance{
+			name: name,
+			why:  "This setup step needs attention before the bridge is ready.",
+			how:  "Run ezyl3 setup, then refresh this view.",
+		}
+	}
+}
+
+func setupMarker(item setupProgressItem, currentStep string) string {
+	if item.state == "ok" {
+		return "[x]"
+	}
+	if item.name == currentStep {
+		return ">> "
+	}
+	return "[ ]"
 }
 
 func section(title, body string) string {
