@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -162,7 +161,7 @@ func (m model) renderOverview() string {
 
 func (m model) renderProfile() string {
 	if m.profile == nil {
-		return fmt.Sprintf("Profile\nNo profile metadata found at %s\nRun ezyl3 setup or ezyl3 import.\n", filepath.Join(m.runtime.Path, "metadata.json"))
+		return fmt.Sprintf("Profile\nNo profile.json found at %s\nRun ezyl3 setup or ezyl3 import.\n", filepath.Join(m.runtime.Path, core.ProfileFileName))
 	}
 	mutability := "managed by ezyl3"
 	if m.profile.Mode == core.ProfileModeExternal {
@@ -229,12 +228,8 @@ func runServiceAction(action func() ([]core.ServiceActionResult, error)) ([]core
 }
 
 func loadProfile(runtimePath string) *core.Profile {
-	data, err := os.ReadFile(filepath.Join(runtimePath, "metadata.json"))
+	profile, err := core.LoadProfileFromRuntime(runtimePath)
 	if err != nil {
-		return nil
-	}
-	var profile core.Profile
-	if err := json.Unmarshal(data, &profile); err != nil {
 		return nil
 	}
 	return &profile

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -83,6 +85,31 @@ func TestTUIServiceActionUpdatesStateMessage(t *testing.T) {
 	}
 	if !strings.Contains(m.View(), "litellm") || !strings.Contains(m.View(), core.ServiceStateLoaded) {
 		t.Fatalf("service view missing action result:\n%s", m.View())
+	}
+}
+
+func TestTUILoadsProfileJSON(t *testing.T) {
+	runtime := core.NewRuntime(t.TempDir())
+	profile := `{
+  "name": "work",
+  "mode": "external",
+  "runtime_dir": "` + runtime.Path + `",
+  "port": 4400,
+  "tunnel_provider": "ngrok",
+  "domain": "work.ngrok-free.dev"
+}`
+	if err := os.WriteFile(filepath.Join(runtime.Path, "profile.json"), []byte(profile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := newModelWithDeps(runtime, dependencies{
+		doctor:   func(core.Runtime) core.DoctorReport { return core.DoctorReport{} },
+		services: &fakeServices{},
+	})
+	m.activeTab = profileTab
+
+	if !strings.Contains(m.View(), "work") || !strings.Contains(m.View(), "external profile") {
+		t.Fatalf("profile view did not load profile.json:\n%s", m.View())
 	}
 }
 

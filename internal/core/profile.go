@@ -10,6 +10,8 @@ import (
 const (
 	ProfileModeManaged  = "managed"
 	ProfileModeExternal = "external"
+	ProfileFileName     = "profile.json"
+	LegacyMetadataFile  = "metadata.json"
 )
 
 type Profile struct {
@@ -56,7 +58,29 @@ func (pm ProfileManager) ImportExternal(name, source string) (Profile, error) {
 		TunnelProvider: "ngrok",
 		Paths:          paths,
 	}
-	if err := writeJSON(filepath.Join(paths.ProfileDir, "metadata.json"), profile, 0o644); err != nil {
+	if err := WriteProfileFile(paths.ProfileDir, profile); err != nil {
+		return Profile{}, err
+	}
+	return profile, nil
+}
+
+func WriteProfileFile(runtimeDir string, profile Profile) error {
+	return writeJSON(filepath.Join(runtimeDir, ProfileFileName), profile, 0o644)
+}
+
+func LoadProfileFromRuntime(runtimeDir string) (Profile, error) {
+	data, err := os.ReadFile(filepath.Join(runtimeDir, ProfileFileName))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return Profile{}, err
+		}
+		data, err = os.ReadFile(filepath.Join(runtimeDir, LegacyMetadataFile))
+		if err != nil {
+			return Profile{}, err
+		}
+	}
+	var profile Profile
+	if err := json.Unmarshal(data, &profile); err != nil {
 		return Profile{}, err
 	}
 	return profile, nil

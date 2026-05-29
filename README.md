@@ -58,12 +58,28 @@ Use `--force` to overwrite an existing managed profile:
 Managed profile files are written under the XDG data/state directories, usually:
 
 - Runtime: `~/.local/share/ezyl3/profiles/default`
+- Profile descriptor: `~/.local/share/ezyl3/profiles/default/profile.json`
 - Logs: `~/.local/state/ezyl3/profiles/default/logs`
 - LaunchAgents: `~/Library/LaunchAgents/com.ezyl3.default.*.plist`
 
+Sample profile descriptors live in `docs/examples/`:
+
+- `profile.managed-local.json`
+- `profile.managed-ngrok.json`
+- `profile.external.json`
+
+`profile.json` supports these fields:
+
+- `name`: profile name used with `--profile`
+- `mode`: `managed` or `external`
+- `runtime_dir`: LiteLLM runtime directory
+- `port`: LiteLLM proxy port
+- `tunnel_provider`: currently `ngrok`
+- `domain`: optional ngrok domain for tunneled profiles
+
 ## External Runtime Import
 
-If you already have a LiteLLM runtime, import it as metadata:
+If you already have a LiteLLM runtime, import it as an external profile:
 
 ```bash
 ./ezyl3 import ~/litellm-cursor

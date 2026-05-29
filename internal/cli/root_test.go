@@ -100,7 +100,7 @@ func TestSetupCreatesLocalOnlyProfileWithoutLeakingSecrets(t *testing.T) {
 	}
 
 	runtime := filepath.Join(home, ".local", "share", "ezyl3", "profiles", "default")
-	for _, path := range []string{"config.yaml", ".env", "run-proxy.sh", "metadata.json"} {
+	for _, path := range []string{"config.yaml", ".env", "run-proxy.sh", "profile.json"} {
 		if _, err := os.Stat(filepath.Join(runtime, path)); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
 		}

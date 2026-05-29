@@ -1,0 +1,7 @@
+{
+  "name": "default",
+  "mode": "managed",
+  "runtime_dir": "/Users/you/.local/share/ezyl3/profiles/default",
+  "port": 4400,
+  "tunnel_provider": "ngrok"
+}

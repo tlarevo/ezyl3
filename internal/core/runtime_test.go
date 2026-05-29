@@ -43,3 +43,26 @@ func TestCursorSettingsFallsBackToLocalBaseURLWithoutNgrok(t *testing.T) {
 		t.Fatalf("settings leaked secret:\n%s", settings)
 	}
 }
+
+func TestDetectNgrokDomainReadsProfileJSON(t *testing.T) {
+	runtime := t.TempDir()
+	profile := Profile{
+		Name:           "default",
+		Mode:           ProfileModeManaged,
+		RuntimeDir:     runtime,
+		Port:           4400,
+		TunnelProvider: "ngrok",
+		Domain:         "profile.ngrok-free.dev",
+	}
+	if err := writeJSON(filepath.Join(runtime, "profile.json"), profile, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	domain, err := DetectNgrokDomain(runtime)
+	if err != nil {
+		t.Fatalf("DetectNgrokDomain returned error: %v", err)
+	}
+	if domain != "profile.ngrok-free.dev" {
+		t.Fatalf("domain = %q", domain)
+	}
+}

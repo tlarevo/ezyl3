@@ -59,7 +59,7 @@ func TestRunSetupCreatesLocalOnlyProfileAndRedactsSecrets(t *testing.T) {
 	if len(installer.dirs) != 1 || installer.dirs[0] != paths.ProfileDir {
 		t.Fatalf("installer dirs = %#v", installer.dirs)
 	}
-	for _, path := range []string{"config.yaml", ".env", "run-proxy.sh", "metadata.json"} {
+	for _, path := range []string{"config.yaml", ".env", "run-proxy.sh", "profile.json"} {
 		if _, err := os.Stat(filepath.Join(paths.ProfileDir, path)); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
 		}

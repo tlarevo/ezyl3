@@ -84,8 +84,10 @@ func CursorSettings(runtime Runtime) (string, error) {
 }
 
 func DetectNgrokDomain(runtimePath string) (string, error) {
+	if profile, err := LoadProfileFromRuntime(runtimePath); err == nil && strings.TrimSpace(profile.Domain) != "" {
+		return NormalizeNgrokDomain(profile.Domain)
+	}
 	candidates := []string{
-		filepath.Join(runtimePath, "metadata.json"),
 		filepath.Join(runtimePath, "logs", "ngrok.out.log"),
 		filepath.Join(runtimePath, "logs", "ngrok.err.log"),
 	}
