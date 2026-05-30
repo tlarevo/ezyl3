@@ -10,6 +10,7 @@ import (
 type SetupOptions struct {
 	Paths          ProfilePaths
 	Domain         string
+	ExecutablePath string
 	Secrets        Secrets
 	Force          bool
 	SkipPythonDeps bool
@@ -25,7 +26,7 @@ type PythonInstaller interface {
 }
 
 type LaunchAgentWriter interface {
-	WriteLaunchAgents(paths ProfilePaths, domain string, port int) error
+	WriteLaunchAgents(paths ProfilePaths, domain string, port int, executablePath string) error
 }
 
 type SetupResult struct {
@@ -45,8 +46,8 @@ func (DefaultPythonInstaller) InstallPythonDeps(runtimeDir string) error {
 
 type DefaultLaunchAgentWriter struct{}
 
-func (DefaultLaunchAgentWriter) WriteLaunchAgents(paths ProfilePaths, domain string, port int) error {
-	return WriteLaunchAgents(paths, domain, port)
+func (DefaultLaunchAgentWriter) WriteLaunchAgents(paths ProfilePaths, domain string, port int, executablePath string) error {
+	return WriteLaunchAgents(paths, domain, port, executablePath)
 }
 
 func RunSetup(opts SetupOptions, deps SetupDependencies) (SetupResult, error) {
@@ -83,11 +84,18 @@ func RunSetup(opts SetupOptions, deps SetupDependencies) (SetupResult, error) {
 	if err != nil {
 		return SetupResult{}, err
 	}
+	executablePath := strings.TrimSpace(opts.ExecutablePath)
+	if executablePath == "" {
+		executablePath, err = os.Executable()
+		if err != nil {
+			return SetupResult{}, fmt.Errorf("resolve ezyl3 executable path: %w", err)
+		}
+	}
 	writer := deps.LaunchAgentWriter
 	if writer == nil {
 		writer = DefaultLaunchAgentWriter{}
 	}
-	if err := writer.WriteLaunchAgents(opts.Paths, domain, profile.Port); err != nil {
+	if err := writer.WriteLaunchAgents(opts.Paths, domain, profile.Port, executablePath); err != nil {
 		return SetupResult{}, err
 	}
 	installed := false

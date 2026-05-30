@@ -26,6 +26,44 @@ func TestDoctorMissingRuntimeUsesActionableDetailsWithoutPathNoise(t *testing.T)
 	t.Fatalf("config.yaml check not found: %#v", report.Checks)
 }
 
+func TestDoctorChecksLiteLLMBinaryInsteadOfLegacyRunProxyScript(t *testing.T) {
+	runtime := NewRuntime(t.TempDir())
+	if err := os.WriteFile(filepath.Join(runtime.Path, "config.yaml"), []byte("model_list: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtime.Path, ".env"), []byte("LITELLM_MASTER_KEY=\"sk-secret\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(runtime.Path, "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	binDir := filepath.Join(runtime.Path, ".venv", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "litellm"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report := Doctor(runtime)
+
+	var sawLiteLLM bool
+	for _, check := range report.Checks {
+		if check.Name == "run-proxy.sh" {
+			t.Fatalf("doctor should not require legacy run-proxy.sh: %#v", report.Checks)
+		}
+		if check.Name == "litellm binary" {
+			sawLiteLLM = true
+			if !check.OK {
+				t.Fatalf("litellm binary check failed: %#v", check)
+			}
+		}
+	}
+	if !sawLiteLLM {
+		t.Fatalf("doctor did not report litellm binary check: %#v", report.Checks)
+	}
+}
+
 func TestCursorSettingsFallsBackToLocalBaseURLWithoutNgrok(t *testing.T) {
 	runtime := NewRuntime(t.TempDir())
 	if err := os.WriteFile(filepath.Join(runtime.Path, ".env"), []byte("LITELLM_MASTER_KEY=\"sk-secret\"\n"), 0o600); err != nil {

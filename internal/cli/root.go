@@ -22,6 +22,8 @@ type options struct {
 	json    bool
 }
 
+var proxyRunner = core.RunProxy
+
 func NewRootCommand() *cobra.Command {
 	opts := &options{profile: "default"}
 	cmd := &cobra.Command{
@@ -38,6 +40,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(setupCommand(opts))
 	cmd.AddCommand(serviceCommand(opts))
 	cmd.AddCommand(logsCommand(opts))
+	cmd.AddCommand(proxyCommand(opts))
 	cmd.AddCommand(tuiCommand(opts))
 	return cmd
 }
@@ -189,10 +192,15 @@ func setupCommand(opts *options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			executablePath, err := os.Executable()
+			if err != nil {
+				return fmt.Errorf("resolve ezyl3 executable path: %w", err)
+			}
 			if isInteractive(cmd) {
 				_, err := setupwizard.Run(setupwizard.Options{
 					Paths:          paths,
 					Domain:         domain,
+					ExecutablePath: executablePath,
 					Secrets:        core.Secrets{HFToken: hfToken, HFBillTo: hfBillTo, OllamaAPIKey: ollamaKey, LiteLLMMasterKey: masterKey},
 					Force:          force,
 					SkipPythonDeps: skipPythonDeps,
@@ -203,6 +211,7 @@ func setupCommand(opts *options) *cobra.Command {
 			result, err := core.RunSetup(core.SetupOptions{
 				Paths:          paths,
 				Domain:         domain,
+				ExecutablePath: executablePath,
 				Secrets:        secrets,
 				Force:          force,
 				SkipPythonDeps: skipPythonDeps,
@@ -272,6 +281,29 @@ func logsCommand(opts *options) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&follow, "follow", false, "follow log output")
+	return cmd
+}
+
+func proxyCommand(opts *options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "proxy",
+		Short: "Run the LiteLLM proxy",
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "run",
+		Short: "Run LiteLLM for the selected runtime",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runtime, err := runtimeFromOptions(opts)
+			if err != nil {
+				return err
+			}
+			return proxyRunner(runtime, core.ProxyStdio{
+				Stdin:  cmd.InOrStdin(),
+				Stdout: cmd.OutOrStdout(),
+				Stderr: cmd.ErrOrStderr(),
+			})
+		},
+	})
 	return cmd
 }
 

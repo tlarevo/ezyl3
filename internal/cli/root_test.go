@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"ezyl3/internal/core"
 )
 
 const cliSampleConfig = `
@@ -100,10 +102,13 @@ func TestSetupCreatesLocalOnlyProfileWithoutLeakingSecrets(t *testing.T) {
 	}
 
 	runtime := filepath.Join(home, ".local", "share", "ezyl3", "profiles", "default")
-	for _, path := range []string{"config.yaml", ".env", "run-proxy.sh", "profile.json"} {
+	for _, path := range []string{"config.yaml", ".env", "profile.json"} {
 		if _, err := os.Stat(filepath.Join(runtime, path)); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(runtime, "run-proxy.sh")); !os.IsNotExist(err) {
+		t.Fatalf("run-proxy.sh should not be generated: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(home, "Library", "LaunchAgents", "com.ezyl3.default.litellm.plist")); err != nil {
 		t.Fatalf("expected litellm LaunchAgent: %v", err)
@@ -136,6 +141,40 @@ func TestSetupRequiresForceToOverwriteManagedProfile(t *testing.T) {
 	}
 	if out, err := execute("setup", "--skip-python-deps", "--force"); err != nil {
 		t.Fatalf("forced setup returned error: %v\n%s", err, out)
+	}
+}
+
+func TestProxyCommandAppearsInHelp(t *testing.T) {
+	out, err := execute("--help")
+	if err != nil {
+		t.Fatalf("help returned error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "proxy") {
+		t.Fatalf("help does not mention proxy command:\n%s", out)
+	}
+}
+
+func TestProxyRunUsesResolvedRuntime(t *testing.T) {
+	runtime := writeRuntimeFixture(t)
+	oldRunner := proxyRunner
+	t.Cleanup(func() { proxyRunner = oldRunner })
+
+	var got core.Runtime
+	proxyRunner = func(runtime core.Runtime, stdio core.ProxyStdio) error {
+		got = runtime
+		_, _ = stdio.Stdout.Write([]byte("proxy delegated\n"))
+		return nil
+	}
+
+	out, err := execute("proxy", "run", "--path", runtime)
+	if err != nil {
+		t.Fatalf("proxy run returned error: %v\n%s", err, out)
+	}
+	if got.Path != runtime || got.Port != 4400 {
+		t.Fatalf("runtime = %#v, want path %q port 4400", got, runtime)
+	}
+	if !strings.Contains(out, "proxy delegated") {
+		t.Fatalf("proxy output missing delegation marker:\n%s", out)
 	}
 }
 

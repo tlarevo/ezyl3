@@ -14,7 +14,11 @@ const litellmPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <string>{{ .Label }}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>{{ .RunProxy }}</string>
+    <string>{{ .ExecutablePath }}</string>
+    <string>proxy</string>
+    <string>run</string>
+    <string>--profile</string>
+    <string>{{ .Profile }}</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
@@ -53,13 +57,14 @@ const ngrokPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `
 
-func RenderLiteLLMPlist(paths ProfilePaths, port int) (string, error) {
+func RenderLiteLLMPlist(paths ProfilePaths, port int, executablePath string) (string, error) {
 	return renderPlist(litellmPlistTemplate, map[string]any{
-		"Label":    paths.LaunchAgentLabel("litellm"),
-		"RunProxy": filepath.Join(paths.ProfileDir, "run-proxy.sh"),
-		"OutLog":   filepath.Join(paths.LogsDir, "litellm.out.log"),
-		"ErrLog":   filepath.Join(paths.LogsDir, "litellm.err.log"),
-		"Port":     port,
+		"Label":          paths.LaunchAgentLabel("litellm"),
+		"ExecutablePath": executablePath,
+		"Profile":        paths.Profile,
+		"OutLog":         filepath.Join(paths.LogsDir, "litellm.out.log"),
+		"ErrLog":         filepath.Join(paths.LogsDir, "litellm.err.log"),
+		"Port":           port,
 	})
 }
 

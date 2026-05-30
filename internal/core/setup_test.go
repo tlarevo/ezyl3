@@ -21,12 +21,13 @@ type fakeLaunchAgentWriter struct {
 }
 
 type launchAgentCall struct {
-	domain string
-	port   int
+	domain         string
+	port           int
+	executablePath string
 }
 
-func (f *fakeLaunchAgentWriter) WriteLaunchAgents(paths ProfilePaths, domain string, port int) error {
-	f.calls = append(f.calls, launchAgentCall{domain: domain, port: port})
+func (f *fakeLaunchAgentWriter) WriteLaunchAgents(paths ProfilePaths, domain string, port int, executablePath string) error {
+	f.calls = append(f.calls, launchAgentCall{domain: domain, port: port, executablePath: executablePath})
 	return nil
 }
 
@@ -36,7 +37,8 @@ func TestRunSetupCreatesLocalOnlyProfileAndRedactsSecrets(t *testing.T) {
 	writer := &fakeLaunchAgentWriter{}
 
 	result, err := RunSetup(SetupOptions{
-		Paths: paths,
+		Paths:          paths,
+		ExecutablePath: "/usr/local/bin/ezyl3",
 		Secrets: Secrets{
 			HFToken:      "hf_secret",
 			HFBillTo:     "billing-org",
@@ -53,16 +55,19 @@ func TestRunSetupCreatesLocalOnlyProfileAndRedactsSecrets(t *testing.T) {
 	if result.Domain != "" {
 		t.Fatalf("domain = %q, want local-only", result.Domain)
 	}
-	if len(writer.calls) != 1 || writer.calls[0].domain != "" || writer.calls[0].port != 4400 {
+	if len(writer.calls) != 1 || writer.calls[0].domain != "" || writer.calls[0].port != 4400 || writer.calls[0].executablePath != "/usr/local/bin/ezyl3" {
 		t.Fatalf("launch writer calls = %#v", writer.calls)
 	}
 	if len(installer.dirs) != 1 || installer.dirs[0] != paths.ProfileDir {
 		t.Fatalf("installer dirs = %#v", installer.dirs)
 	}
-	for _, path := range []string{"config.yaml", ".env", "run-proxy.sh", "profile.json"} {
+	for _, path := range []string{"config.yaml", ".env", "profile.json"} {
 		if _, err := os.Stat(filepath.Join(paths.ProfileDir, path)); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(paths.ProfileDir, "run-proxy.sh")); !os.IsNotExist(err) {
+		t.Fatalf("run-proxy.sh should not be generated: %v", err)
 	}
 	secrets, err := ReadSecrets(filepath.Join(paths.ProfileDir, ".env"))
 	if err != nil {
@@ -106,6 +111,7 @@ func TestRunSetupNormalizesNgrokDomainBeforeWriting(t *testing.T) {
 	result, err := RunSetup(SetupOptions{
 		Paths:          paths,
 		Domain:         "https://Example.ngrok-free.dev/",
+		ExecutablePath: "/usr/local/bin/ezyl3",
 		SkipPythonDeps: true,
 	}, SetupDependencies{LaunchAgentWriter: writer})
 	if err != nil {
@@ -127,6 +133,7 @@ func TestRunSetupRejectsInvalidNgrokDomainBeforeWriting(t *testing.T) {
 	_, err := RunSetup(SetupOptions{
 		Paths:          paths,
 		Domain:         "https://example.com/",
+		ExecutablePath: "/usr/local/bin/ezyl3",
 		SkipPythonDeps: true,
 	}, SetupDependencies{LaunchAgentWriter: writer})
 	if err == nil || !strings.Contains(err.Error(), "invalid ngrok") {

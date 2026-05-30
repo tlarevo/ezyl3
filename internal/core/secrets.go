@@ -27,24 +27,13 @@ func WriteSecrets(path string, secrets Secrets) error {
 }
 
 func ReadSecrets(path string) (Secrets, error) {
-	file, err := os.Open(path)
+	items, err := readEnvValues(path)
 	if err != nil {
 		return Secrets{}, err
 	}
-	defer file.Close()
-
 	values := map[string]string{}
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
-			continue
-		}
-		parts := strings.SplitN(line, "=", 2)
-		values[parts[0]] = strings.Trim(parts[1], `"`)
-	}
-	if err := scanner.Err(); err != nil {
-		return Secrets{}, err
+	for _, item := range items {
+		values[item.key] = item.value
 	}
 	return Secrets{
 		HFToken:          values["HF_TOKEN"],
@@ -52,6 +41,43 @@ func ReadSecrets(path string) (Secrets, error) {
 		OllamaAPIKey:     values["OLLAMA_API_KEY"],
 		LiteLLMMasterKey: values["LITELLM_MASTER_KEY"],
 	}, nil
+}
+
+func ReadEnvFile(path string) ([]string, error) {
+	items, err := readEnvValues(path)
+	if err != nil {
+		return nil, err
+	}
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		values = append(values, item.key+"="+item.value)
+	}
+	return values, nil
+}
+
+type envValue struct {
+	key   string
+	value string
+}
+
+func readEnvValues(path string) ([]envValue, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	values := []envValue{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		values = append(values, envValue{key: parts[0], value: strings.Trim(parts[1], `"`)})
+	}
+	return values, scanner.Err()
 }
 
 func (s Secrets) Redacted() string {

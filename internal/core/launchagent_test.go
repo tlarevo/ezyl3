@@ -12,7 +12,7 @@ func TestLaunchAgentPlistsUseProfileSpecificLabelsAndPaths(t *testing.T) {
 		LogsDir:    "/tmp/ezyl3/state/logs",
 	}
 
-	litellm, err := RenderLiteLLMPlist(paths, 4400)
+	litellm, err := RenderLiteLLMPlist(paths, 4400, "/usr/local/bin/ezyl3")
 	if err != nil {
 		t.Fatalf("RenderLiteLLMPlist returned error: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestLaunchAgentPlistsUseProfileSpecificLabelsAndPaths(t *testing.T) {
 		text string
 		want []string
 	}{
-		{"litellm", litellm, []string{"com.ezyl3.default.litellm", "/tmp/ezyl3/profile/run-proxy.sh", "/tmp/ezyl3/state/logs/litellm.out.log"}},
+		{"litellm", litellm, []string{"com.ezyl3.default.litellm", "/usr/local/bin/ezyl3", "proxy", "run", "--profile", "default", "/tmp/ezyl3/state/logs/litellm.out.log"}},
 		{"ngrok", ngrok, []string{"com.ezyl3.default.ngrok", "--url=example.ngrok-free.dev", "http://localhost:4400", "/tmp/ezyl3/state/logs/ngrok.out.log"}},
 	} {
 		for _, want := range pair.want {

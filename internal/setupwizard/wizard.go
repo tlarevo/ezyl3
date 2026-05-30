@@ -18,6 +18,7 @@ import (
 type Options struct {
 	Paths          core.ProfilePaths
 	Domain         string
+	ExecutablePath string
 	Secrets        core.Secrets
 	Force          bool
 	SkipPythonDeps bool
@@ -238,8 +239,9 @@ func (m model) runSetup() tea.Cmd {
 
 func (m model) setupOptions() core.SetupOptions {
 	return core.SetupOptions{
-		Paths:  m.opts.Paths,
-		Domain: strings.TrimSpace(m.domainInput.Value()),
+		Paths:          m.opts.Paths,
+		Domain:         strings.TrimSpace(m.domainInput.Value()),
+		ExecutablePath: m.opts.ExecutablePath,
 		Secrets: core.Secrets{
 			HFToken:          strings.TrimSpace(m.secretInputs[0].Value()),
 			OllamaAPIKey:     strings.TrimSpace(m.secretInputs[1].Value()),
