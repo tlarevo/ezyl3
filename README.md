@@ -37,7 +37,7 @@ Create the default managed profile:
 ./ezyl3 setup
 ```
 
-`setup` is interactive when it is attached to a terminal. It asks for secrets without echoing them, lets you leave ngrok blank for local-only setup, generates a LiteLLM master key when you do not provide one, writes runtime files, and prints a redacted summary.
+`setup` opens a guided terminal wizard when it is attached to a terminal. The wizard uses masked inputs for secrets, lets you leave ngrok blank for local-only setup, shows a review step before writing files, runs setup with progress feedback, generates a LiteLLM master key when you do not provide one, and finishes with a redacted Cursor-ready summary.
 
 For scripted setup:
 

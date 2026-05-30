@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +9,7 @@ import (
 	"strings"
 
 	"ezyl3/internal/core"
+	"ezyl3/internal/setupwizard"
 	"ezyl3/internal/tui"
 
 	"github.com/spf13/cobra"
@@ -190,36 +190,14 @@ func setupCommand(opts *options) *cobra.Command {
 				return err
 			}
 			if isInteractive(cmd) {
-				if !cmd.Flags().Changed("domain") {
-					domain, err = readPrompt(cmd, "ngrok domain (optional, leave blank for local-only): ")
-					if err != nil {
-						return err
-					}
-				}
-				if !cmd.Flags().Changed("hf-token") {
-					hfToken, err = readSecretPrompt(cmd, "Hugging Face token (optional): ")
-					if err != nil {
-						return err
-					}
-				}
-				if !cmd.Flags().Changed("ollama-api-key") {
-					ollamaKey, err = readSecretPrompt(cmd, "Ollama API key (optional): ")
-					if err != nil {
-						return err
-					}
-				}
-				if !cmd.Flags().Changed("hf-bill-to") {
-					hfBillTo, err = readPrompt(cmd, "Hugging Face billing org (optional): ")
-					if err != nil {
-						return err
-					}
-				}
-				if !cmd.Flags().Changed("master-key") {
-					masterKey, err = readSecretPrompt(cmd, "LiteLLM master key (optional, generated if blank): ")
-					if err != nil {
-						return err
-					}
-				}
+				_, err := setupwizard.Run(setupwizard.Options{
+					Paths:          paths,
+					Domain:         domain,
+					Secrets:        core.Secrets{HFToken: hfToken, HFBillTo: hfBillTo, OllamaAPIKey: ollamaKey, LiteLLMMasterKey: masterKey},
+					Force:          force,
+					SkipPythonDeps: skipPythonDeps,
+				})
+				return err
 			}
 			secrets := core.Secrets{HFToken: hfToken, HFBillTo: hfBillTo, OllamaAPIKey: ollamaKey, LiteLLMMasterKey: masterKey}
 			result, err := core.RunSetup(core.SetupOptions{
@@ -249,29 +227,6 @@ func setupCommand(opts *options) *cobra.Command {
 func isInteractive(cmd *cobra.Command) bool {
 	file, ok := cmd.InOrStdin().(*os.File)
 	return ok && term.IsTerminal(int(file.Fd()))
-}
-
-func readPrompt(cmd *cobra.Command, label string) (string, error) {
-	_, _ = fmt.Fprint(cmd.ErrOrStderr(), label)
-	value, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
-	if err != nil && err != io.EOF {
-		return "", err
-	}
-	return strings.TrimSpace(value), nil
-}
-
-func readSecretPrompt(cmd *cobra.Command, label string) (string, error) {
-	file, ok := cmd.InOrStdin().(*os.File)
-	if !ok {
-		return readPrompt(cmd, label)
-	}
-	_, _ = fmt.Fprint(cmd.ErrOrStderr(), label)
-	value, err := term.ReadPassword(int(file.Fd()))
-	_, _ = fmt.Fprintln(cmd.ErrOrStderr())
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(value)), nil
 }
 
 func serviceCommand(opts *options) *cobra.Command {
