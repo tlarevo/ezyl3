@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const DefaultLiteLLMConfig = `model_list:
@@ -139,14 +141,23 @@ func selectPythonForLiteLLM(lookPath func(string) (string, error), versionOf fun
 		foundUnsupported = append(foundUnsupported, fmt.Sprintf("%s at %s found %s", candidate, path, strings.TrimSpace(version)))
 	}
 	if len(foundUnsupported) > 0 {
-		return "", fmt.Errorf("Python 3.12 or 3.13 is required for LiteLLM setup; %s", strings.Join(foundUnsupported, "; "))
+		return "", fmt.Errorf("python 3.12 or 3.13 is required for LiteLLM setup; %s", strings.Join(foundUnsupported, "; "))
 	}
-	return "", fmt.Errorf("Python 3.12 or 3.13 is required for LiteLLM setup")
+	return "", fmt.Errorf("python 3.12 or 3.13 is required for LiteLLM setup")
 }
 
 func pythonVersion(path string) (string, error) {
-	out, err := exec.Command(path, "--version").CombinedOutput()
+	return pythonVersionWithTimeout(path, 5*time.Second)
+}
+
+func pythonVersionWithTimeout(path string, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "--version").CombinedOutput()
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("python version check timed out after %s: %w", timeout, err)
+		}
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
