@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -13,11 +14,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const (
 	UVBootstrapVersion   = "0.11.16"
 	ManagedPythonVersion = "3.13.13"
+	uvDownloadTimeout    = 5 * time.Minute
+	uvCommandTimeout     = 30 * time.Minute
 )
 
 type UVToolchain struct {
@@ -40,10 +44,11 @@ type uvArtifact struct {
 }
 
 type commandSpec struct {
-	Dir  string
-	Path string
-	Args []string
-	Env  []string
+	Context context.Context
+	Dir     string
+	Path    string
+	Args    []string
+	Env     []string
 }
 
 func (t UVToolchain) InstallPythonDeps(paths ProfilePaths) error {
@@ -213,7 +218,17 @@ func extractUVBinary(archive []byte, target string) error {
 }
 
 func downloadBytes(url string) ([]byte, error) {
-	resp, err := http.Get(url)
+	return downloadBytesWithTimeout(url, uvDownloadTimeout)
+}
+
+func downloadBytesWithTimeout(url string, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -225,10 +240,22 @@ func downloadBytes(url string) ([]byte, error) {
 }
 
 func runToolchainCommand(spec commandSpec) error {
-	cmd := exec.Command(spec.Path, spec.Args...)
+	ctx := spec.Context
+	cancel := func() {}
+	if ctx == nil {
+		ctx, cancel = context.WithTimeout(context.Background(), uvCommandTimeout)
+	}
+	defer cancel()
+	cmd := exec.CommandContext(ctx, spec.Path, spec.Args...)
 	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), spec.Env...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("run %s: %w", spec.Path, ctxErr)
+		}
+		return err
+	}
+	return nil
 }

@@ -4,14 +4,19 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestUVArtifactForDarwinArchitectures(t *testing.T) {
@@ -190,6 +195,38 @@ func TestUVToolchainRejectsBadChecksumBeforeRunningCommands(t *testing.T) {
 	}
 }
 
+func TestDownloadBytesWithTimeoutCancelsHungRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	_, err := downloadBytesWithTimeout(server.URL, 10*time.Millisecond)
+	if err == nil {
+		t.Fatal("downloadBytesWithTimeout returned nil error for timed-out request")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("error = %v, want deadline exceeded", err)
+	}
+}
+
+func TestRunToolchainCommandHonorsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := runToolchainCommand(commandSpec{
+		Context: ctx,
+		Path:    testCommandPath(t),
+		Args:    []string{"-c", "exit 0"},
+	})
+	if err == nil {
+		t.Fatal("runToolchainCommand returned nil error for canceled context")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context canceled", err)
+	}
+}
+
 type recordingCommandRunner struct {
 	commands []commandSpec
 }
@@ -217,4 +254,16 @@ func testTarGz(t *testing.T, name, content string) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+func testCommandPath(t *testing.T) string {
+	t.Helper()
+	for _, candidate := range []string{"sh", "true"} {
+		path, err := exec.LookPath(candidate)
+		if err == nil {
+			return path
+		}
+	}
+	t.Fatal("no test command found")
+	return ""
 }

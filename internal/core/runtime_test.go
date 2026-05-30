@@ -91,6 +91,36 @@ func TestDoctorUsesManagedProfileLogsDir(t *testing.T) {
 	t.Fatalf("logs check not found: %#v", report.Checks)
 }
 
+func TestDoctorKeepsLogsCheckNameForCustomLogsDirBasename(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	if err := os.MkdirAll(paths.ProfileDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logsDir := filepath.Join(t.TempDir(), "custom-log-output")
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	profile := Profile{Name: "default", Mode: ProfileModeManaged, RuntimeDir: paths.ProfileDir, LogsDir: logsDir, Port: 4400}
+	if err := WriteProfileFile(paths.ProfileDir, profile); err != nil {
+		t.Fatal(err)
+	}
+
+	report := Doctor(NewRuntime(paths.ProfileDir))
+
+	for _, check := range report.Checks {
+		if check.Name == "custom-log-output" {
+			t.Fatalf("logs check should not be named from path basename: %#v", check)
+		}
+		if check.Name == "logs" {
+			if !check.OK {
+				t.Fatalf("logs check = %#v, want custom logs dir to pass", check)
+			}
+			return
+		}
+	}
+	t.Fatalf("logs check not found: %#v", report.Checks)
+}
+
 func TestDoctorMissingLiteLLMBinaryPointsToManagedSetup(t *testing.T) {
 	runtime := NewRuntime(t.TempDir())
 

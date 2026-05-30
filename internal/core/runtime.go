@@ -47,7 +47,7 @@ func Doctor(runtime Runtime) DoctorReport {
 		fileCheck(filepath.Join(runtime.Path, "config.yaml")),
 		fileCheck(filepath.Join(runtime.Path, ".env")),
 		litellmBinaryCheck(runtime.Path),
-		dirCheck(RuntimeLogsDir(runtime)),
+		dirCheck("logs", RuntimeLogsDir(runtime)),
 	}
 	if secrets, err := ReadSecrets(filepath.Join(runtime.Path, ".env")); err == nil {
 		checks = append(checks,
@@ -145,16 +145,16 @@ func litellmBinaryCheck(runtimePath string) Check {
 	return Check{Name: "litellm binary", OK: false, Detail: err.Error()}
 }
 
-func dirCheck(path string) Check {
+func dirCheck(name, path string) Check {
 	info, err := os.Stat(path)
 	ok := err == nil && info.IsDir()
 	if ok {
-		return Check{Name: filepath.Base(path), OK: true, Detail: "found"}
+		return Check{Name: name, OK: true, Detail: "found"}
 	}
 	if err == nil {
-		return Check{Name: filepath.Base(path), OK: false, Detail: "not a directory; run ezyl3 setup --force to recreate the managed profile"}
+		return Check{Name: name, OK: false, Detail: "not a directory; run ezyl3 setup --force to recreate the managed profile"}
 	}
-	return Check{Name: filepath.Base(path), OK: false, Detail: setupFileDetail(filepath.Base(path), err)}
+	return Check{Name: name, OK: false, Detail: setupFileDetail(name, err)}
 }
 
 func httpCheck(name, target, detail string) Check {
