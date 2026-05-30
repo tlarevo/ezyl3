@@ -8,7 +8,7 @@ Requirements:
 
 - macOS
 - Go 1.24 or newer
-- Python 3.12 or `python3`
+- Python 3.12 or 3.13
 - `ngrok`, only if you want a public tunnel
 
 Build:

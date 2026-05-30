@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 const DefaultLiteLLMConfig = `model_list:
@@ -103,12 +105,9 @@ func GenerateMasterKey() (string, error) {
 }
 
 func InstallPythonDeps(runtimeDir string) error {
-	python, err := exec.LookPath("python3.12")
+	python, err := selectPythonForLiteLLM(exec.LookPath, pythonVersion)
 	if err != nil {
-		python, err = exec.LookPath("python3")
-		if err != nil {
-			return fmt.Errorf("python3.12 or python3 is required: %w", err)
-		}
+		return err
 	}
 	venv := filepath.Join(runtimeDir, ".venv")
 	if err := runCommand(runtimeDir, python, "-m", "venv", venv); err != nil {
@@ -119,6 +118,58 @@ func InstallPythonDeps(runtimeDir string) error {
 		return err
 	}
 	return runCommand(runtimeDir, pip, "install", "litellm[proxy]")
+}
+
+func selectPythonForLiteLLM(lookPath func(string) (string, error), versionOf func(string) (string, error)) (string, error) {
+	candidates := []string{"python3.13", "python3.12", "python3"}
+	var foundUnsupported []string
+	for _, candidate := range candidates {
+		path, err := lookPath(candidate)
+		if err != nil {
+			continue
+		}
+		version, err := versionOf(path)
+		if err != nil {
+			foundUnsupported = append(foundUnsupported, fmt.Sprintf("%s at %s; version check failed: %v", candidate, path, err))
+			continue
+		}
+		if liteLLMSupportsPython(version) {
+			return path, nil
+		}
+		foundUnsupported = append(foundUnsupported, fmt.Sprintf("%s at %s found %s", candidate, path, strings.TrimSpace(version)))
+	}
+	if len(foundUnsupported) > 0 {
+		return "", fmt.Errorf("Python 3.12 or 3.13 is required for LiteLLM setup; %s", strings.Join(foundUnsupported, "; "))
+	}
+	return "", fmt.Errorf("Python 3.12 or 3.13 is required for LiteLLM setup")
+}
+
+func pythonVersion(path string) (string, error) {
+	out, err := exec.Command(path, "--version").CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func liteLLMSupportsPython(version string) bool {
+	parts := strings.Fields(strings.TrimSpace(version))
+	if len(parts) < 2 || parts[0] != "Python" {
+		return false
+	}
+	number := strings.Split(parts[1], ".")
+	if len(number) < 2 {
+		return false
+	}
+	major, err := strconv.Atoi(number[0])
+	if err != nil {
+		return false
+	}
+	minor, err := strconv.Atoi(number[1])
+	if err != nil {
+		return false
+	}
+	return major == 3 && (minor == 12 || minor == 13)
 }
 
 func WriteLaunchAgents(paths ProfilePaths, domain string, port int, executablePath string) error {
