@@ -47,3 +47,21 @@ func TestWriteSecretsUses0600AndRedactsValues(t *testing.T) {
 		t.Fatalf("redacted display is not useful: %q", display)
 	}
 }
+
+func TestReadEnvFilePreservesArbitraryKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("\n# ignored\nHF_TOKEN=\"hf_secret\"\nCUSTOM_FLAG=enabled\nEMPTY=\"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	values, err := ReadEnvFile(path)
+	if err != nil {
+		t.Fatalf("ReadEnvFile returned error: %v", err)
+	}
+
+	for _, want := range []string{"HF_TOKEN=hf_secret", "CUSTOM_FLAG=enabled", "EMPTY="} {
+		if !containsString(values, want) {
+			t.Fatalf("ReadEnvFile missing %q in %#v", want, values)
+		}
+	}
+}

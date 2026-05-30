@@ -118,6 +118,14 @@ Manage LaunchAgents:
 
 Local-only profiles do not need an ngrok LaunchAgent. Service commands report ngrok as not configured instead of treating it as a setup failure.
 
+Run the proxy directly when debugging LaunchAgent issues:
+
+```bash
+./ezyl3 proxy run
+```
+
+The proxy runner loads `.env` from the selected runtime and starts `.venv/bin/litellm` with the managed `config.yaml`.
+
 Read logs:
 
 ```bash
@@ -150,7 +158,8 @@ Use JSON for automation:
 
 Common fixes:
 
-- Missing `config.yaml`, `.env`, or `run-proxy.sh`: run `./ezyl3 setup` or import an existing runtime.
+- Missing `config.yaml`, `.env`, or `.venv/bin/litellm`: run `./ezyl3 setup` without `--skip-python-deps`, or import an existing runtime.
+- Proxy exits immediately: run `./ezyl3 proxy run` to see the LiteLLM startup error in the foreground.
 - LiteLLM is not reachable: run `./ezyl3 service start`, then inspect `./ezyl3 logs litellm`.
 - ngrok is not reachable: confirm you provided a valid `*.ngrok-free.dev` or `*.ngrok-free.app` domain. Ignore this for local-only profiles.
 - Cursor cannot connect: re-run `./ezyl3 cursor settings` and confirm Cursor uses the printed base URL and model names.

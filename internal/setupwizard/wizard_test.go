@@ -95,6 +95,9 @@ func TestWizardReviewRunsSetupWithCapturedOptions(t *testing.T) {
 		if !got.Force || !got.SkipPythonDeps {
 			t.Fatalf("Force/SkipPythonDeps = %v/%v", got.Force, got.SkipPythonDeps)
 		}
+		if got.ExecutablePath != "/usr/local/bin/ezyl3" {
+			t.Fatalf("ExecutablePath = %q", got.ExecutablePath)
+		}
 		return testSetupResult(opts), nil
 	})
 	m.domainInput.SetValue("demo.ngrok-free.dev")
@@ -156,6 +159,7 @@ func testOptions(t *testing.T) Options {
 			LogsDir:    filepath.Join(root, "logs"),
 			HomeDir:    root,
 		},
+		ExecutablePath: "/usr/local/bin/ezyl3",
 		SkipPythonDeps: true,
 	}
 }

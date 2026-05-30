@@ -46,7 +46,7 @@ func Doctor(runtime Runtime) DoctorReport {
 	checks := []Check{
 		fileCheck(filepath.Join(runtime.Path, "config.yaml")),
 		fileCheck(filepath.Join(runtime.Path, ".env")),
-		fileCheck(filepath.Join(runtime.Path, "run-proxy.sh")),
+		litellmBinaryCheck(runtime.Path),
 		dirCheck(filepath.Join(runtime.Path, "logs")),
 	}
 	if secrets, err := ReadSecrets(filepath.Join(runtime.Path, ".env")); err == nil {
@@ -121,6 +121,21 @@ func domainFromFile(path string) (string, error) {
 func fileCheck(path string) Check {
 	_, err := os.Stat(path)
 	return Check{Name: filepath.Base(path), OK: err == nil, Detail: setupFileDetail(filepath.Base(path), err)}
+}
+
+func litellmBinaryCheck(runtimePath string) Check {
+	path := filepath.Join(runtimePath, ".venv", "bin", "litellm")
+	info, err := os.Stat(path)
+	if err == nil && !info.IsDir() {
+		return Check{Name: "litellm binary", OK: true, Detail: "found"}
+	}
+	if err == nil {
+		return Check{Name: "litellm binary", OK: false, Detail: ".venv/bin/litellm is a directory; rerun ezyl3 setup --force"}
+	}
+	if os.IsNotExist(err) {
+		return Check{Name: "litellm binary", OK: false, Detail: "missing .venv/bin/litellm; rerun ezyl3 setup without --skip-python-deps or install litellm[proxy]"}
+	}
+	return Check{Name: "litellm binary", OK: false, Detail: err.Error()}
 }
 
 func dirCheck(path string) Check {

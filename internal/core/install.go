@@ -73,9 +73,6 @@ func CreateManagedProfile(paths ProfilePaths, secrets Secrets, domain string) (P
 	if err := WriteSecrets(filepath.Join(paths.ProfileDir, ".env"), secrets); err != nil {
 		return Profile{}, err
 	}
-	if err := os.WriteFile(filepath.Join(paths.ProfileDir, "run-proxy.sh"), []byte(runProxyScript(paths.ProfileDir)), 0o755); err != nil {
-		return Profile{}, err
-	}
 	profile := Profile{Name: paths.Profile, Mode: ProfileModeManaged, RuntimeDir: paths.ProfileDir, Port: 4400, TunnelProvider: "ngrok", Domain: domain, Paths: paths}
 	if err := WriteProfileFile(paths.ProfileDir, profile); err != nil {
 		return Profile{}, err
@@ -110,11 +107,11 @@ func InstallPythonDeps(runtimeDir string) error {
 	return runCommand(runtimeDir, pip, "install", "litellm[proxy]")
 }
 
-func WriteLaunchAgents(paths ProfilePaths, domain string, port int) error {
+func WriteLaunchAgents(paths ProfilePaths, domain string, port int, executablePath string) error {
 	if err := os.MkdirAll(filepath.Dir(paths.LaunchAgentPath("litellm")), 0o755); err != nil {
 		return err
 	}
-	litellm, err := RenderLiteLLMPlist(paths, port)
+	litellm, err := RenderLiteLLMPlist(paths, port, executablePath)
 	if err != nil {
 		return err
 	}
@@ -137,14 +134,4 @@ func runCommand(dir, name string, args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
-}
-
-func runProxyScript(runtimeDir string) string {
-	return fmt.Sprintf(`#!/usr/bin/env bash
-set -euo pipefail
-set -a
-source %q
-set +a
-exec %q --config %q --host 127.0.0.1 --port 4400
-`, filepath.Join(runtimeDir, ".env"), filepath.Join(runtimeDir, ".venv", "bin", "litellm"), filepath.Join(runtimeDir, "config.yaml"))
 }
