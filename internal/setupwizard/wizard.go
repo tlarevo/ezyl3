@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -45,6 +46,10 @@ type model struct {
 	keys     keyMap
 	runner   setupRunner
 	err      error
+
+	domainInput  textinput.Model
+	secretInputs []textinput.Model
+	secretFocus  int
 }
 
 type keyMap struct {
@@ -97,6 +102,9 @@ func newModel(opts Options, runner setupRunner) model {
 		help:   helpView,
 		keys:   newKeyMap(),
 		runner: runner,
+
+		domainInput:  newInput("name.ngrok-free.dev", opts.Domain, false),
+		secretInputs: newSecretInputs(opts.Secrets),
 	}
 }
 
@@ -105,19 +113,26 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.syncFocus()
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.next):
-			if m.step < stepReview {
+			if m.step == stepSecrets && m.secretFocus < len(m.secretInputs)-1 {
+				m.secretFocus++
+			} else if m.step < stepReview {
 				m.step++
 			}
 		case key.Matches(msg, m.keys.back):
-			if m.step > stepProfile {
+			if m.step == stepSecrets && m.secretFocus > 0 {
+				m.secretFocus--
+			} else if m.step > stepProfile {
 				m.step--
 			}
+		default:
+			return m.updateInput(msg)
 		}
 	}
 	return m, nil
@@ -157,12 +172,73 @@ func (m model) renderStep() string {
 	case stepProfile:
 		return fmt.Sprintf("Profile: %s\nRuntime: %s", m.opts.Paths.Profile, m.opts.Paths.ProfileDir)
 	case stepTunnel:
-		return "Choose local-only setup or enter an ngrok domain."
+		mode := "local-only setup"
+		if strings.TrimSpace(m.domainInput.Value()) != "" {
+			mode = "ngrok tunnel"
+		}
+		return "Tunnel: " + mode + "\n" + m.domainInput.View()
 	case stepSecrets:
-		return "Enter optional provider secrets. Secret values are masked."
+		var b strings.Builder
+		b.WriteString("Enter optional provider secrets. Secret values are masked.\n")
+		labels := []string{"Hugging Face token", "Ollama API key", "Hugging Face billing org", "LiteLLM master key"}
+		for i, input := range m.secretInputs {
+			fmt.Fprintf(&b, "%s: %s\n", labels[i], input.View())
+		}
+		return strings.TrimRight(b.String(), "\n")
 	case stepReview:
 		return "Review setup choices, then press enter to create the profile."
 	default:
 		return ""
+	}
+}
+
+func (m *model) syncFocus() {
+	m.domainInput.Blur()
+	for i := range m.secretInputs {
+		m.secretInputs[i].Blur()
+	}
+	switch m.step {
+	case stepTunnel:
+		_ = m.domainInput.Focus()
+	case stepSecrets:
+		if m.secretFocus < 0 || m.secretFocus >= len(m.secretInputs) {
+			m.secretFocus = 0
+		}
+		_ = m.secretInputs[m.secretFocus].Focus()
+	}
+}
+
+func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch m.step {
+	case stepTunnel:
+		var cmd tea.Cmd
+		m.domainInput, cmd = m.domainInput.Update(msg)
+		return m, cmd
+	case stepSecrets:
+		var cmd tea.Cmd
+		m.secretInputs[m.secretFocus], cmd = m.secretInputs[m.secretFocus].Update(msg)
+		return m, cmd
+	default:
+		return m, nil
+	}
+}
+
+func newInput(placeholder, value string, secret bool) textinput.Model {
+	input := textinput.New()
+	input.Placeholder = placeholder
+	input.Width = 48
+	if secret {
+		input.EchoMode = textinput.EchoPassword
+	}
+	input.SetValue(value)
+	return input
+}
+
+func newSecretInputs(secrets core.Secrets) []textinput.Model {
+	return []textinput.Model{
+		newInput("optional", secrets.HFToken, true),
+		newInput("optional", secrets.OllamaAPIKey, true),
+		newInput("optional", secrets.HFBillTo, false),
+		newInput("generated if blank", secrets.LiteLLMMasterKey, true),
 	}
 }
