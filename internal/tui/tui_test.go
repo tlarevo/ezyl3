@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"ezyl3/internal/core"
 
@@ -168,6 +169,45 @@ func TestTUIOverviewShowsReadySummaryWhenHealthy(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("ready overview missing %q:\n%s", want, view)
 		}
+	}
+}
+
+func TestTUIOverviewShowsUsageSummary(t *testing.T) {
+	runtime := core.NewRuntime(t.TempDir())
+	m := newModelWithDeps(runtime, dependencies{
+		doctor:   func(core.Runtime) core.DoctorReport { return core.DoctorReport{} },
+		services: &fakeServices{},
+		usage: func(core.Runtime) (core.UsageSummary, error) {
+			return core.UsageSummary{
+				Requests:     2,
+				TotalTokens:  50,
+				CostUSD:      0.005,
+				TopModels:    []core.UsageBreakdown{{Name: "litellm-simple", Requests: 2, TotalTokens: 50}},
+				TopProviders: []core.UsageBreakdown{{Name: "huggingface", Requests: 2, TotalTokens: 50}},
+			}, nil
+		},
+	})
+
+	view := m.View()
+	for _, want := range []string{"Usage Today", "Requests: 2", "Tokens: 50", "Estimated spend: $0.005000", "Top model: litellm-simple"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("usage view missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestTUIOverviewShowsEmptyUsageState(t *testing.T) {
+	runtime := core.NewRuntime(t.TempDir())
+	m := newModelWithDeps(runtime, dependencies{
+		doctor:   func(core.Runtime) core.DoctorReport { return core.DoctorReport{} },
+		services: &fakeServices{},
+		usage: func(core.Runtime) (core.UsageSummary, error) {
+			return core.UsageSummary{Since: time.Now()}, nil
+		},
+	})
+
+	if !strings.Contains(m.View(), "No usage recorded yet") {
+		t.Fatalf("overview missing empty usage state:\n%s", m.View())
 	}
 }
 

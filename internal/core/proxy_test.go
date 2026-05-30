@@ -39,7 +39,7 @@ func TestBuildProxyCommandUsesRuntimeEnvAndLiteLLMBinary(t *testing.T) {
 	if !reflect.DeepEqual(spec.Args, wantArgs) {
 		t.Fatalf("Args = %#v, want %#v", spec.Args, wantArgs)
 	}
-	for _, want := range []string{"LITELLM_MASTER_KEY=sk-test", "CUSTOM_FLAG=enabled"} {
+	for _, want := range []string{"LITELLM_MASTER_KEY=sk-test", "CUSTOM_FLAG=enabled", "EZYL3_USAGE_DB=" + filepath.Join(runtime.Path, UsageDBFileName)} {
 		if !containsString(spec.Env, want) {
 			t.Fatalf("Env missing %q in %#v", want, spec.Env)
 		}

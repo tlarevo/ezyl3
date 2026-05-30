@@ -40,6 +40,7 @@ func BuildProxyCommand(runtime Runtime) (ProxyCommandSpec, error) {
 	if err != nil {
 		return ProxyCommandSpec{}, err
 	}
+	env = append(env, "EZYL3_USAGE_DB="+UsageDBPath(runtime))
 	return ProxyCommandSpec{
 		Dir:  runtimePath,
 		Path: litellm,

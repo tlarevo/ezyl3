@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"ezyl3/internal/core"
 
@@ -48,6 +49,7 @@ type serviceController interface {
 type dependencies struct {
 	doctor   func(core.Runtime) core.DoctorReport
 	services serviceController
+	usage    func(core.Runtime) (core.UsageSummary, error)
 }
 
 type keyMap struct {
@@ -116,6 +118,8 @@ type model struct {
 	serviceResults []core.ServiceActionResult
 	models         []core.ModelEntry
 	modelErr       error
+	usageSummary   core.UsageSummary
+	usageErr       error
 	logPreview     string
 	message        string
 	activeTab      int
@@ -139,6 +143,9 @@ func newModelWithDeps(runtime core.Runtime, deps dependencies) model {
 	}
 	if deps.services == nil {
 		deps.services = core.ServiceManager{Paths: pathsForRuntime(runtime)}
+	}
+	if deps.usage == nil {
+		deps.usage = todayUsage
 	}
 	helpView := help.New()
 	helpView.Width = 82
@@ -220,6 +227,7 @@ func (m *model) refresh() {
 	m.profile = loadProfile(m.runtime.Path)
 	m.serviceResults, _ = m.deps.services.Status()
 	m.models, m.modelErr = loadModels(m.runtime)
+	m.usageSummary, m.usageErr = m.deps.usage(m.runtime)
 	m.logPreview = loadLogPreview(m.runtime)
 }
 
@@ -249,6 +257,8 @@ func (m model) renderOverview() string {
 		fmt.Sprintf("Status: %s\nRuntime: %s\nProfile mode: %s\nTunnel: %s", progress.overallStatus(), m.runtime.Path, mode, statusText(tunnelState(m.serviceResults))),
 	) + section("Setup Guide",
 		progress.render(m.setupBar),
+	) + section("Usage Today",
+		m.renderUsageSummary(),
 	) + section("Next Action",
 		progress.nextAction,
 	)
@@ -358,6 +368,31 @@ func loadLogPreview(runtime core.Runtime) string {
 		lines = lines[len(lines)-8:]
 	}
 	return strings.Join(lines, "\n")
+}
+
+func todayUsage(runtime core.Runtime) (core.UsageSummary, error) {
+	now := time.Now()
+	since := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	return core.SummarizeUsage(runtime, since, now.Add(time.Nanosecond))
+}
+
+func (m model) renderUsageSummary() string {
+	if m.usageErr != nil {
+		return statusText("warning") + " " + m.usageErr.Error()
+	}
+	if m.usageSummary.Requests == 0 {
+		return "No usage recorded yet."
+	}
+	topModel := "none"
+	if len(m.usageSummary.TopModels) > 0 {
+		topModel = m.usageSummary.TopModels[0].Name
+	}
+	return fmt.Sprintf("Requests: %d\nTokens: %d\nEstimated spend: $%.6f\nTop model: %s",
+		m.usageSummary.Requests,
+		m.usageSummary.TotalTokens,
+		m.usageSummary.CostUSD,
+		topModel,
+	)
 }
 
 func firstDoctorDetail(report core.DoctorReport) string {

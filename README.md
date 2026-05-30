@@ -59,6 +59,7 @@ Managed profile files are written under the XDG data/state directories, usually:
 
 - Runtime: `~/.local/share/ezyl3/profiles/default`
 - Profile descriptor: `~/.local/share/ezyl3/profiles/default/profile.json`
+- Usage database: `~/.local/share/ezyl3/profiles/default/usage.sqlite`
 - Logs: `~/.local/state/ezyl3/profiles/default/logs`
 - LaunchAgents: `~/Library/LaunchAgents/com.ezyl3.default.*.plist`
 
@@ -126,6 +127,16 @@ Run the proxy directly when debugging LaunchAgent issues:
 
 The proxy runner loads `.env` from the selected runtime and starts `.venv/bin/litellm` with the managed `config.yaml`.
 
+Show local usage recorded by the managed proxy:
+
+```bash
+./ezyl3 usage summary
+./ezyl3 usage summary --days 7
+./ezyl3 usage summary --json
+```
+
+Managed profiles record request counts, token counts, model/provider breakdowns, and best-effort estimated spend in `usage.sqlite`. Prompt and response bodies are not stored.
+
 Read logs:
 
 ```bash
@@ -140,7 +151,7 @@ Open the setup companion TUI:
 ./ezyl3 tui
 ```
 
-The TUI shows setup overview, profile mode, services, model tiers, doctor checks, and recent LiteLLM log output. In the Services view, press `s` to start, `x` to stop, and `k` to restart services.
+The TUI shows setup overview, local usage, profile mode, services, model tiers, doctor checks, and recent LiteLLM log output. In the Services view, press `s` to start, `x` to stop, and `k` to restart services.
 
 ## Troubleshooting
 

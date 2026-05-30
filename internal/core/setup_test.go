@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,9 +62,31 @@ func TestRunSetupCreatesLocalOnlyProfileAndRedactsSecrets(t *testing.T) {
 	if len(installer.dirs) != 1 || installer.dirs[0] != paths.ProfileDir {
 		t.Fatalf("installer dirs = %#v", installer.dirs)
 	}
-	for _, path := range []string{"config.yaml", ".env", "profile.json"} {
+	for _, path := range []string{"config.yaml", ".env", "profile.json", UsageDBFileName, "ezyl3_usage_callback.py"} {
 		if _, err := os.Stat(filepath.Join(paths.ProfileDir, path)); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
+		}
+	}
+	cfg, err := LoadLiteLLMConfig(filepath.Join(paths.ProfileDir, "config.yaml"))
+	if err != nil {
+		t.Fatalf("LoadLiteLLMConfig returned error: %v", err)
+	}
+	if got := fmt.Sprint(cfg.LiteLLMSettings.Extra["callbacks"]); !strings.Contains(got, "ezyl3_usage_callback.proxy_handler_instance") {
+		t.Fatalf("config callbacks = %v, want ezyl3 usage callback", got)
+	}
+	callback, err := os.ReadFile(filepath.Join(paths.ProfileDir, "ezyl3_usage_callback.py"))
+	if err != nil {
+		t.Fatalf("expected callback file to be readable: %v", err)
+	}
+	callbackText := string(callback)
+	for _, want := range []string{"CustomLogger", "async_log_success_event", "sqlite3", "EZYL3_USAGE_DB"} {
+		if !strings.Contains(callbackText, want) {
+			t.Fatalf("callback file missing %q:\n%s", want, callbackText)
+		}
+	}
+	for _, forbidden := range []string{"api_key", "completion_response", "messages"} {
+		if strings.Contains(callbackText, forbidden) {
+			t.Fatalf("callback file should not reference sensitive payload field %q:\n%s", forbidden, callbackText)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(paths.ProfileDir, "run-proxy.sh")); !os.IsNotExist(err) {
