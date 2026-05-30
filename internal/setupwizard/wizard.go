@@ -114,12 +114,16 @@ func newModel(opts Options, runner setupRunner) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return m.spinner.Tick
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.syncFocus()
 	switch msg := msg.(type) {
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case setupDoneMsg:
 		m.result = msg.result
 		m.err = msg.err
@@ -154,7 +158,7 @@ func (m model) View() string {
 	var b strings.Builder
 	b.WriteString(lipgloss.NewStyle().Bold(true).Render("ezyl3 setup"))
 	b.WriteString("\n")
-	b.WriteString(m.progress.ViewAs(float64(m.step+1) / float64(len(stepNames))))
+	b.WriteString(m.progress.ViewAs(m.progressPercent()))
 	b.WriteString("\n\n")
 	b.WriteString(m.renderSteps())
 	b.WriteString("\n\n")
@@ -162,6 +166,13 @@ func (m model) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.help.View(m.keys))
 	return b.String()
+}
+
+func (m model) progressPercent() float64 {
+	if m.step >= stepRunning {
+		return 1
+	}
+	return float64(m.step+1) / float64(len(stepNames))
 }
 
 func (m model) renderSteps() string {
