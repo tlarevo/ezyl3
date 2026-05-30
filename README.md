@@ -109,6 +109,14 @@ Common model names:
 - `litellm-complex`
 - `litellm-reasoning`
 
+`litellm-auto` is a LiteLLM complexity router: it scores each request and routes it
+to the `simple`, `medium`, `complex`, or `reasoning` tier automatically, defaulting
+to `medium`. Select `litellm-auto` in Cursor unless you want to pin a specific tier.
+
+If you set a Hugging Face billing org during setup (`--hf-bill-to` or the wizard
+bill-to field), managed setup adds an `X-HF-Bill-To` header to Hugging Face requests
+so usage bills to that org. Leaving it blank omits the header entirely.
+
 ## Services and Logs
 
 Manage LaunchAgents:

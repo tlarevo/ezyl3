@@ -30,6 +30,8 @@ model_list:
     litellm_params: {model: ollama_chat/complex}
   - model_name: litellm-reasoning-fb
     litellm_params: {model: ollama_chat/reasoning}
+  - model_name: litellm-auto
+    litellm_params: {model: auto_router/complexity_router}
 litellm_settings:
   fallbacks:
     - litellm-medium: ["litellm-medium-fb"]
