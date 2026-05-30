@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,9 @@ func TestSelectPythonForLiteLLMRejectsUnsupportedPython3Fallback(t *testing.T) {
 }
 
 func TestPythonVersionTimesOut(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skip Unix shell-script timeout helper on Windows")
+	}
 	script := filepath.Join(t.TempDir(), "slow-python")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 1\necho Python 3.13.0\n"), 0o755); err != nil {
 		t.Fatal(err)
