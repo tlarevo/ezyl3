@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -45,6 +46,8 @@ type model struct {
 	help     help.Model
 	keys     keyMap
 	runner   setupRunner
+	spinner  spinner.Model
+	result   core.SetupResult
 	err      error
 
 	domainInput  textinput.Model
@@ -83,7 +86,7 @@ func Run(opts Options) (core.SetupResult, error) {
 	if !ok {
 		return core.SetupResult{}, fmt.Errorf("setup wizard returned unexpected model")
 	}
-	return core.SetupResult{}, m.err
+	return m.result, m.err
 }
 
 func newModel(opts Options, runner setupRunner) model {
@@ -92,6 +95,7 @@ func newModel(opts Options, runner setupRunner) model {
 	}
 	helpView := help.New()
 	helpView.ShortSeparator = "  "
+	spin := spinner.New(spinner.WithSpinner(spinner.Line))
 	return model{
 		opts: opts,
 		progress: progress.New(
@@ -99,9 +103,10 @@ func newModel(opts Options, runner setupRunner) model {
 			progress.WithSolidFill("#5FD7AF"),
 			progress.WithFillCharacters('=', '-'),
 		),
-		help:   helpView,
-		keys:   newKeyMap(),
-		runner: runner,
+		help:    helpView,
+		keys:    newKeyMap(),
+		runner:  runner,
+		spinner: spin,
 
 		domainInput:  newInput("name.ngrok-free.dev", opts.Domain, false),
 		secretInputs: newSecretInputs(opts.Secrets),
@@ -115,6 +120,10 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.syncFocus()
 	switch msg := msg.(type) {
+	case setupDoneMsg:
+		m.result = msg.result
+		m.err = msg.err
+		m.step = stepDone
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.quit):
@@ -122,6 +131,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.next):
 			if m.step == stepSecrets && m.secretFocus < len(m.secretInputs)-1 {
 				m.secretFocus++
+			} else if m.step == stepReview {
+				m.step = stepRunning
+				return m, m.runSetup()
 			} else if m.step < stepReview {
 				m.step++
 			}
@@ -187,8 +199,44 @@ func (m model) renderStep() string {
 		return strings.TrimRight(b.String(), "\n")
 	case stepReview:
 		return "Review setup choices, then press enter to create the profile."
+	case stepRunning:
+		return m.spinner.View() + " Creating managed profile..."
+	case stepDone:
+		if m.err != nil {
+			return "Setup failed: " + m.err.Error()
+		}
+		return m.result.Summary()
 	default:
 		return ""
+	}
+}
+
+type setupDoneMsg struct {
+	result core.SetupResult
+	err    error
+}
+
+func (m model) runSetup() tea.Cmd {
+	opts := m.setupOptions()
+	deps := m.opts.Dependencies
+	return func() tea.Msg {
+		result, err := m.runner(opts, deps)
+		return setupDoneMsg{result: result, err: err}
+	}
+}
+
+func (m model) setupOptions() core.SetupOptions {
+	return core.SetupOptions{
+		Paths:  m.opts.Paths,
+		Domain: strings.TrimSpace(m.domainInput.Value()),
+		Secrets: core.Secrets{
+			HFToken:          strings.TrimSpace(m.secretInputs[0].Value()),
+			OllamaAPIKey:     strings.TrimSpace(m.secretInputs[1].Value()),
+			HFBillTo:         strings.TrimSpace(m.secretInputs[2].Value()),
+			LiteLLMMasterKey: strings.TrimSpace(m.secretInputs[3].Value()),
+		},
+		Force:          m.opts.Force,
+		SkipPythonDeps: m.opts.SkipPythonDeps,
 	}
 }
 
