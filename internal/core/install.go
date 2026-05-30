@@ -1,16 +1,10 @@
 package core
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
 )
 
 const DefaultLiteLLMConfig = `model_list:
@@ -91,7 +85,7 @@ func CreateManagedProfile(paths ProfilePaths, secrets Secrets, domain string) (P
 	if err := os.WriteFile(filepath.Join(paths.ProfileDir, UsageCallbackFileName), []byte(UsageCallbackPython), 0o644); err != nil {
 		return Profile{}, err
 	}
-	profile := Profile{Name: paths.Profile, Mode: ProfileModeManaged, RuntimeDir: paths.ProfileDir, Port: 4400, TunnelProvider: "ngrok", Domain: domain, Paths: paths}
+	profile := Profile{Name: paths.Profile, Mode: ProfileModeManaged, RuntimeDir: paths.ProfileDir, LogsDir: paths.LogsDir, Port: 4400, TunnelProvider: "ngrok", Domain: domain, Paths: paths}
 	if err := WriteProfileFile(paths.ProfileDir, profile); err != nil {
 		return Profile{}, err
 	}
@@ -106,81 +100,8 @@ func GenerateMasterKey() (string, error) {
 	return "sk-cursor-" + base64.RawURLEncoding.EncodeToString(raw[:]), nil
 }
 
-func InstallPythonDeps(runtimeDir string) error {
-	python, err := selectPythonForLiteLLM(exec.LookPath, pythonVersion)
-	if err != nil {
-		return err
-	}
-	venv := filepath.Join(runtimeDir, ".venv")
-	if err := runCommand(runtimeDir, python, "-m", "venv", venv); err != nil {
-		return err
-	}
-	pip := filepath.Join(venv, "bin", "pip")
-	if err := runCommand(runtimeDir, pip, "install", "--upgrade", "pip"); err != nil {
-		return err
-	}
-	return runCommand(runtimeDir, pip, "install", "litellm[proxy]")
-}
-
-func selectPythonForLiteLLM(lookPath func(string) (string, error), versionOf func(string) (string, error)) (string, error) {
-	candidates := []string{"python3.13", "python3.12", "python3"}
-	var foundUnsupported []string
-	for _, candidate := range candidates {
-		path, err := lookPath(candidate)
-		if err != nil {
-			continue
-		}
-		version, err := versionOf(path)
-		if err != nil {
-			foundUnsupported = append(foundUnsupported, fmt.Sprintf("%s at %s; version check failed: %v", candidate, path, err))
-			continue
-		}
-		if liteLLMSupportsPython(version) {
-			return path, nil
-		}
-		foundUnsupported = append(foundUnsupported, fmt.Sprintf("%s at %s found %s", candidate, path, strings.TrimSpace(version)))
-	}
-	if len(foundUnsupported) > 0 {
-		return "", fmt.Errorf("python 3.12 or 3.13 is required for LiteLLM setup; %s", strings.Join(foundUnsupported, "; "))
-	}
-	return "", fmt.Errorf("python 3.12 or 3.13 is required for LiteLLM setup")
-}
-
-func pythonVersion(path string) (string, error) {
-	return pythonVersionWithTimeout(path, 5*time.Second)
-}
-
-func pythonVersionWithTimeout(path string, timeout time.Duration) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "--version").CombinedOutput()
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("python version check timed out after %s: %w", timeout, err)
-		}
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-func liteLLMSupportsPython(version string) bool {
-	parts := strings.Fields(strings.TrimSpace(version))
-	if len(parts) < 2 || parts[0] != "Python" {
-		return false
-	}
-	number := strings.Split(parts[1], ".")
-	if len(number) < 2 {
-		return false
-	}
-	major, err := strconv.Atoi(number[0])
-	if err != nil {
-		return false
-	}
-	minor, err := strconv.Atoi(number[1])
-	if err != nil {
-		return false
-	}
-	return major == 3 && (minor == 12 || minor == 13)
+func InstallPythonDeps(paths ProfilePaths) error {
+	return (UVToolchain{}).InstallPythonDeps(paths)
 }
 
 func WriteLaunchAgents(paths ProfilePaths, domain string, port int, executablePath string) error {
@@ -202,14 +123,6 @@ func WriteLaunchAgents(paths ProfilePaths, domain string, port int, executablePa
 		return err
 	}
 	return os.WriteFile(paths.LaunchAgentPath("ngrok"), []byte(ngrok), 0o600)
-}
-
-func runCommand(dir, name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
 }
 
 const UsageCallbackPython = `import os

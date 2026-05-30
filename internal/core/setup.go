@@ -22,7 +22,7 @@ type SetupDependencies struct {
 }
 
 type PythonInstaller interface {
-	InstallPythonDeps(runtimeDir string) error
+	InstallPythonDeps(paths ProfilePaths) error
 }
 
 type LaunchAgentWriter interface {
@@ -40,8 +40,8 @@ type SetupResult struct {
 
 type DefaultPythonInstaller struct{}
 
-func (DefaultPythonInstaller) InstallPythonDeps(runtimeDir string) error {
-	return InstallPythonDeps(runtimeDir)
+func (DefaultPythonInstaller) InstallPythonDeps(paths ProfilePaths) error {
+	return InstallPythonDeps(paths)
 }
 
 type DefaultLaunchAgentWriter struct{}
@@ -104,7 +104,7 @@ func RunSetup(opts SetupOptions, deps SetupDependencies) (SetupResult, error) {
 		if installer == nil {
 			installer = DefaultPythonInstaller{}
 		}
-		if err := installer.InstallPythonDeps(profile.RuntimeDir); err != nil {
+		if err := installer.InstallPythonDeps(profile.Paths); err != nil {
 			return SetupResult{}, err
 		}
 		installed = true

@@ -47,7 +47,7 @@ func Doctor(runtime Runtime) DoctorReport {
 		fileCheck(filepath.Join(runtime.Path, "config.yaml")),
 		fileCheck(filepath.Join(runtime.Path, ".env")),
 		litellmBinaryCheck(runtime.Path),
-		dirCheck(filepath.Join(runtime.Path, "logs")),
+		dirCheck(RuntimeLogsDir(runtime)),
 	}
 	if secrets, err := ReadSecrets(filepath.Join(runtime.Path, ".env")); err == nil {
 		checks = append(checks,
@@ -64,6 +64,13 @@ func Doctor(runtime Runtime) DoctorReport {
 		checks = append(checks, httpCheck("tunnel liveliness", "https://"+domain+"/health/liveliness", "domain: "+domain))
 	}
 	return DoctorReport{RuntimePath: runtime.Path, Checks: checks}
+}
+
+func RuntimeLogsDir(runtime Runtime) string {
+	if profile, err := LoadProfileFromRuntime(runtime.Path); err == nil && strings.TrimSpace(profile.LogsDir) != "" {
+		return profile.LogsDir
+	}
+	return filepath.Join(runtime.Path, "logs")
 }
 
 func (r DoctorReport) JSON() ([]byte, error) {
@@ -133,7 +140,7 @@ func litellmBinaryCheck(runtimePath string) Check {
 		return Check{Name: "litellm binary", OK: false, Detail: ".venv/bin/litellm is a directory; rerun ezyl3 setup --force"}
 	}
 	if os.IsNotExist(err) {
-		return Check{Name: "litellm binary", OK: false, Detail: "missing .venv/bin/litellm; rerun ezyl3 setup without --skip-python-deps or install litellm[proxy]"}
+		return Check{Name: "litellm binary", OK: false, Detail: "missing .venv/bin/litellm; rerun ezyl3 setup without --skip-python-deps to recreate the managed environment"}
 	}
 	return Check{Name: "litellm binary", OK: false, Detail: err.Error()}
 }

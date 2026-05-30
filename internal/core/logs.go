@@ -59,5 +59,5 @@ func (r FileLogReader) path(service string) (string, error) {
 	if service != "litellm" && service != "ngrok" {
 		return "", fmt.Errorf("unknown log target %q", service)
 	}
-	return filepath.Join(r.Runtime.Path, "logs", service+".out.log"), nil
+	return filepath.Join(RuntimeLogsDir(r.Runtime), service+".out.log"), nil
 }

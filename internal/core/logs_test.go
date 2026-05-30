@@ -28,6 +28,31 @@ func TestFileLogReaderReadsServiceLog(t *testing.T) {
 	}
 }
 
+func TestFileLogReaderReadsManagedProfileLogsDir(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	if err := os.MkdirAll(paths.ProfileDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.LogsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	profile := Profile{Name: "default", Mode: ProfileModeManaged, RuntimeDir: paths.ProfileDir, LogsDir: paths.LogsDir, Port: 4400, Paths: paths}
+	if err := WriteProfileFile(paths.ProfileDir, profile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.LogsDir, "litellm.out.log"), []byte("managed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := FileLogReader{Runtime: NewRuntime(paths.ProfileDir)}.Read("litellm")
+	if err != nil {
+		t.Fatalf("Read returned error: %v", err)
+	}
+	if string(out) != "managed\n" {
+		t.Fatalf("Read = %q", out)
+	}
+}
+
 func TestFileLogReaderRejectsUnknownService(t *testing.T) {
 	_, err := FileLogReader{Runtime: NewRuntime(t.TempDir())}.Read("other")
 	if err == nil || !strings.Contains(err.Error(), "unknown log target") {

@@ -64,6 +64,53 @@ func TestDoctorChecksLiteLLMBinaryInsteadOfLegacyRunProxyScript(t *testing.T) {
 	}
 }
 
+func TestDoctorUsesManagedProfileLogsDir(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	if err := os.MkdirAll(paths.ProfileDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.LogsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	profile := Profile{Name: "default", Mode: ProfileModeManaged, RuntimeDir: paths.ProfileDir, LogsDir: paths.LogsDir, Port: 4400, Paths: paths}
+	if err := WriteProfileFile(paths.ProfileDir, profile); err != nil {
+		t.Fatal(err)
+	}
+
+	report := Doctor(NewRuntime(paths.ProfileDir))
+
+	for _, check := range report.Checks {
+		if check.Name != "logs" {
+			continue
+		}
+		if !check.OK {
+			t.Fatalf("logs check = %#v, want managed logs dir to pass", check)
+		}
+		return
+	}
+	t.Fatalf("logs check not found: %#v", report.Checks)
+}
+
+func TestDoctorMissingLiteLLMBinaryPointsToManagedSetup(t *testing.T) {
+	runtime := NewRuntime(t.TempDir())
+
+	report := Doctor(runtime)
+
+	for _, check := range report.Checks {
+		if check.Name != "litellm binary" {
+			continue
+		}
+		if !strings.Contains(check.Detail, "rerun ezyl3 setup") {
+			t.Fatalf("litellm detail = %q, want setup guidance", check.Detail)
+		}
+		if strings.Contains(check.Detail, "install litellm[proxy]") {
+			t.Fatalf("litellm detail should not suggest manual pip install: %q", check.Detail)
+		}
+		return
+	}
+	t.Fatalf("litellm binary check not found: %#v", report.Checks)
+}
+
 func TestCursorSettingsFallsBackToLocalBaseURLWithoutNgrok(t *testing.T) {
 	runtime := NewRuntime(t.TempDir())
 	if err := os.WriteFile(filepath.Join(runtime.Path, ".env"), []byte("LITELLM_MASTER_KEY=\"sk-secret\"\n"), 0o600); err != nil {

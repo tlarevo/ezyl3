@@ -18,6 +18,7 @@ type Profile struct {
 	Name           string       `json:"name"`
 	Mode           string       `json:"mode"`
 	RuntimeDir     string       `json:"runtime_dir"`
+	LogsDir        string       `json:"logs_dir,omitempty"`
 	Port           int          `json:"port"`
 	TunnelProvider string       `json:"tunnel_provider"`
 	Domain         string       `json:"domain,omitempty"`
