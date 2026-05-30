@@ -8,6 +8,9 @@ import (
 
 	"ezyl3/internal/core"
 
+	"github.com/charmbracelet/bubbles/help"
+	keypkg "github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -23,6 +26,18 @@ const (
 
 var tabs = []string{"Overview", "Profile", "Services", "Models", "Doctor", "Logs"}
 
+var (
+	appStyle       = lipgloss.NewStyle().Padding(1, 2)
+	brandStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
+	mutedStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	activeTabStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
+	titleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+	panelStyle     = lipgloss.NewStyle().Padding(0, 1).MarginBottom(1)
+	okStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	warnStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+	missingStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+)
+
 type serviceController interface {
 	Start() ([]core.ServiceActionResult, error)
 	Stop() ([]core.ServiceActionResult, error)
@@ -35,6 +50,65 @@ type dependencies struct {
 	services serviceController
 }
 
+type keyMap struct {
+	next     keypkg.Binding
+	previous keypkg.Binding
+	refresh  keypkg.Binding
+	quit     keypkg.Binding
+	start    keypkg.Binding
+	stop     keypkg.Binding
+	restart  keypkg.Binding
+}
+
+func newKeyMap(activeTab int) keyMap {
+	keys := keyMap{
+		next: keypkg.NewBinding(
+			keypkg.WithKeys("tab", "right", "l"),
+			keypkg.WithHelp("tab", "next"),
+		),
+		previous: keypkg.NewBinding(
+			keypkg.WithKeys("shift+tab", "left", "h"),
+			keypkg.WithHelp("shift+tab", "previous"),
+		),
+		refresh: keypkg.NewBinding(
+			keypkg.WithKeys("r"),
+			keypkg.WithHelp("r", "refresh"),
+		),
+		quit: keypkg.NewBinding(
+			keypkg.WithKeys("q", "ctrl+c", "esc"),
+			keypkg.WithHelp("q", "quit"),
+		),
+		start: keypkg.NewBinding(
+			keypkg.WithKeys("s"),
+			keypkg.WithHelp("s", "start"),
+		),
+		stop: keypkg.NewBinding(
+			keypkg.WithKeys("x"),
+			keypkg.WithHelp("x", "stop"),
+		),
+		restart: keypkg.NewBinding(
+			keypkg.WithKeys("k"),
+			keypkg.WithHelp("k", "restart"),
+		),
+	}
+	servicesActive := activeTab == servicesTab
+	keys.start.SetEnabled(servicesActive)
+	keys.stop.SetEnabled(servicesActive)
+	keys.restart.SetEnabled(servicesActive)
+	return keys
+}
+
+func (k keyMap) ShortHelp() []keypkg.Binding {
+	return []keypkg.Binding{k.next, k.refresh, k.quit, k.start, k.stop, k.restart}
+}
+
+func (k keyMap) FullHelp() [][]keypkg.Binding {
+	return [][]keypkg.Binding{
+		{k.next, k.previous, k.refresh, k.quit},
+		{k.start, k.stop, k.restart},
+	}
+}
+
 type model struct {
 	runtime        core.Runtime
 	report         core.DoctorReport
@@ -45,6 +119,8 @@ type model struct {
 	logPreview     string
 	message        string
 	activeTab      int
+	setupBar       progress.Model
+	help           help.Model
 	deps           dependencies
 }
 
@@ -64,7 +140,19 @@ func newModelWithDeps(runtime core.Runtime, deps dependencies) model {
 	if deps.services == nil {
 		deps.services = core.ServiceManager{Paths: pathsForRuntime(runtime)}
 	}
-	m := model{runtime: runtime, deps: deps}
+	helpView := help.New()
+	helpView.Width = 82
+	helpView.ShortSeparator = "  "
+	m := model{
+		runtime: runtime,
+		setupBar: progress.New(
+			progress.WithWidth(46),
+			progress.WithSolidFill("#5FD7AF"),
+			progress.WithFillCharacters('=', '-'),
+		),
+		help: helpView,
+		deps: deps,
+	}
 	m.refresh()
 	return m
 }
@@ -76,36 +164,37 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c", "esc":
+		keys := newKeyMap(m.activeTab)
+		switch {
+		case keypkg.Matches(msg, keys.quit):
 			return m, tea.Quit
-		case "tab", "right", "l":
+		case keypkg.Matches(msg, keys.next):
 			m.activeTab = (m.activeTab + 1) % len(tabs)
-		case "shift+tab", "left", "h":
+		case keypkg.Matches(msg, keys.previous):
 			m.activeTab = (m.activeTab + len(tabs) - 1) % len(tabs)
-		case "r":
+		case keypkg.Matches(msg, keys.refresh):
 			m.refresh()
 			m.message = "refreshed"
-		case "s":
-			if m.activeTab == servicesTab {
-				m.serviceResults, m.message = runServiceAction(m.deps.services.Start)
-			}
-		case "x":
-			if m.activeTab == servicesTab {
-				m.serviceResults, m.message = runServiceAction(m.deps.services.Stop)
-			}
-		case "k":
-			if m.activeTab == servicesTab {
-				m.serviceResults, m.message = runServiceAction(m.deps.services.Restart)
-			}
+		case keypkg.Matches(msg, keys.start):
+			m.runServiceActionAndRefresh(m.deps.services.Start)
+		case keypkg.Matches(msg, keys.stop):
+			m.runServiceActionAndRefresh(m.deps.services.Stop)
+		case keypkg.Matches(msg, keys.restart):
+			m.runServiceActionAndRefresh(m.deps.services.Restart)
 		}
 	}
 	return m, nil
 }
 
 func (m model) View() string {
-	title := lipgloss.NewStyle().Bold(true).Render("ezyl3 LiteLLM Cursor Bridge")
-	body := title + "\n" + m.renderTabs() + "\n\n"
+	main := m.renderMain()
+	body := lipgloss.JoinHorizontal(lipgloss.Top, m.renderSidebar(), main)
+	footer := m.renderHelp()
+	return appStyle.Render(body + "\n\n" + footer + "\n")
+}
+
+func (m model) renderMain() string {
+	body := titleStyle.Render(tabTitle(m.activeTab)) + "\n" + mutedStyle.Render(m.statusSummary()) + "\n\n"
 	switch m.activeTab {
 	case overviewTab:
 		body += m.renderOverview()
@@ -123,12 +212,7 @@ func (m model) View() string {
 	if m.message != "" {
 		body += "\n" + m.message + "\n"
 	}
-	body += "\nKeys: tab next, r refresh, q quit"
-	if m.activeTab == servicesTab {
-		body += ", s start, x stop, k restart"
-	}
-	body += "\n"
-	return body
+	return lipgloss.NewStyle().Width(82).Render(body)
 }
 
 func (m *model) refresh() {
@@ -139,16 +223,20 @@ func (m *model) refresh() {
 	m.logPreview = loadLogPreview(m.runtime)
 }
 
-func (m model) renderTabs() string {
-	parts := make([]string, 0, len(tabs))
+func (m model) renderSidebar() string {
+	lines := []string{brandStyle.Render("ezyl3"), mutedStyle.Render("LiteLLM bridge"), "", "Navigation"}
 	for i, tab := range tabs {
 		if i == m.activeTab {
-			parts = append(parts, "["+tab+"]")
+			lines = append(lines, activeTabStyle.Render("> "+tab))
 			continue
 		}
-		parts = append(parts, tab)
+		lines = append(lines, mutedStyle.Render("  "+tab))
 	}
-	return strings.Join(parts, "  ")
+	return lipgloss.NewStyle().Width(20).MarginRight(3).Render(strings.Join(lines, "\n"))
+}
+
+func (m model) renderHelp() string {
+	return mutedStyle.Render("Keys: " + m.help.View(newKeyMap(m.activeTab)))
 }
 
 func (m model) renderOverview() string {
@@ -156,12 +244,19 @@ func (m model) renderOverview() string {
 	if m.profile != nil {
 		mode = m.profile.Mode
 	}
-	return fmt.Sprintf("Runtime: %s\nProfile mode: %s\nNext check: %s\n", m.runtime.Path, mode, firstDoctorDetail(m.report))
+	progress := m.setupProgress()
+	return section("Bridge Status",
+		fmt.Sprintf("Status: %s\nRuntime: %s\nProfile mode: %s\nTunnel: %s", progress.overallStatus(), m.runtime.Path, mode, statusText(tunnelState(m.serviceResults))),
+	) + section("Setup Guide",
+		progress.render(m.setupBar),
+	) + section("Next Action",
+		progress.nextAction,
+	)
 }
 
 func (m model) renderProfile() string {
 	if m.profile == nil {
-		return fmt.Sprintf("Profile\nNo profile.json found at %s\nRun ezyl3 setup or ezyl3 import.\n", filepath.Join(m.runtime.Path, core.ProfileFileName))
+		return section("Profile", fmt.Sprintf("No profile.json found at %s\nRun ezyl3 setup or ezyl3 import.", filepath.Join(m.runtime.Path, core.ProfileFileName)))
 	}
 	mutability := "managed by ezyl3"
 	if m.profile.Mode == core.ProfileModeExternal {
@@ -171,52 +266,53 @@ func (m model) renderProfile() string {
 	if m.profile.Domain != "" {
 		tunnel = m.profile.TunnelProvider + ": " + m.profile.Domain
 	}
-	return fmt.Sprintf("Profile\nName: %s\nMode: %s\nRuntime: %s\nPort: %d\nTunnel: %s\n%s\n", m.profile.Name, m.profile.Mode, m.profile.RuntimeDir, m.profile.Port, tunnel, mutability)
+	return section("Profile Identity",
+		fmt.Sprintf("Name: %s\nMode: %s\nRuntime: %s\nPort: %d\nTunnel: %s\nNotice: %s", m.profile.Name, m.profile.Mode, m.profile.RuntimeDir, m.profile.Port, tunnel, mutability),
+	)
 }
 
 func (m model) renderServices() string {
 	var b strings.Builder
-	b.WriteString("Services\n")
 	if len(m.serviceResults) == 0 {
 		b.WriteString("No service status available.\n")
-		return b.String()
+		return section("Services", b.String()) + section("Actions", "s start  x stop  k restart")
 	}
 	for _, result := range m.serviceResults {
-		fmt.Fprintf(&b, "%-8s %-14s %s\n", result.Service, result.State, result.Detail)
+		fmt.Fprintf(&b, "%-8s %-16s %s\n", result.Service, statusText(result.State), result.Detail)
 	}
-	return b.String()
+	return section("Services", b.String()) + section("Actions", "s start  x stop  k restart")
 }
 
 func (m model) renderModels() string {
 	if m.modelErr != nil {
-		return "Models\n" + m.modelErr.Error() + "\n"
+		return section("Model Validation", statusText("warning")+" "+m.modelErr.Error())
 	}
 	var b strings.Builder
-	b.WriteString("Models\n")
 	for _, entry := range m.models {
 		fmt.Fprintf(&b, "%-24s %v\n", entry.ModelName, entry.LiteLLMParams["model"])
 	}
-	return b.String()
+	if b.Len() == 0 {
+		b.WriteString("No model tiers found.")
+	}
+	return section("Model Tiers", b.String())
 }
 
 func (m model) renderDoctor() string {
 	var b strings.Builder
-	b.WriteString("Doctor\n")
 	for _, check := range m.report.Checks {
-		mark := "fail"
-		if check.OK {
-			mark = "ok"
-		}
-		fmt.Fprintf(&b, "%-22s %-4s %s\n", check.Name, mark, check.Detail)
+		fmt.Fprintf(&b, "%-22s %-12s %s\n", check.Name, checkStatus(check), check.Detail)
 	}
-	return b.String()
+	if b.Len() == 0 {
+		b.WriteString("No doctor checks available.")
+	}
+	return section("Doctor Checks", b.String())
 }
 
 func (m model) renderLogs() string {
 	if m.logPreview == "" {
-		return "Logs\nNo LiteLLM log output yet.\n"
+		return section("Recent LiteLLM Logs", "No LiteLLM log output yet.")
 	}
-	return "Logs\n" + m.logPreview
+	return section("Recent LiteLLM Logs", m.logPreview)
 }
 
 func runServiceAction(action func() ([]core.ServiceActionResult, error)) ([]core.ServiceActionResult, string) {
@@ -225,6 +321,15 @@ func runServiceAction(action func() ([]core.ServiceActionResult, error)) ([]core
 		return results, err.Error()
 	}
 	return results, "service action complete"
+}
+
+func (m *model) runServiceActionAndRefresh(action func() ([]core.ServiceActionResult, error)) {
+	results, message := runServiceAction(action)
+	m.serviceResults = results
+	m.message = message
+	if status, err := m.deps.services.Status(); err == nil {
+		m.serviceResults = status
+	}
 }
 
 func loadProfile(runtimePath string) *core.Profile {
@@ -265,6 +370,270 @@ func firstDoctorDetail(report core.DoctorReport) string {
 		return "all visible checks passed"
 	}
 	return "run setup to create a profile"
+}
+
+type setupProgress struct {
+	items      []setupProgressItem
+	nextAction string
+}
+
+type setupProgressItem struct {
+	name   string
+	state  string
+	detail string
+}
+
+func (m model) setupProgress() setupProgress {
+	profileOK := m.profile != nil
+	configOK := doctorCheckOK(m.report, "config.yaml") || m.modelErr == nil
+	secretsOK := doctorCheckOK(m.report, "LITELLM_MASTER_KEY")
+	serviceOK := serviceState(m.serviceResults, "litellm") == core.ServiceStateRunning
+	cursorOK := cursorSettingsOK(m.report)
+
+	items := []setupProgressItem{
+		{name: "Profile", state: boolState(profileOK), detail: profileDetail(m.profile)},
+		{name: "Config", state: boolState(configOK), detail: configDetail(m.modelErr)},
+		{name: "Secrets", state: boolState(secretsOK), detail: secretDetail(secretsOK)},
+		{name: "Services", state: boolState(serviceOK), detail: serviceDetail(m.serviceResults)},
+		{name: "Cursor", state: boolState(cursorOK), detail: cursorDetail(cursorOK)},
+	}
+	next := "Cursor settings ready"
+	switch {
+	case !profileOK || !configOK || !secretsOK:
+		next = "Run ezyl3 setup"
+	case !serviceOK:
+		next = "Press s to start LiteLLM"
+	case !cursorOK:
+		next = "Review Cursor settings"
+	}
+	return setupProgress{items: items, nextAction: next}
+}
+
+func (p setupProgress) completeCount() int {
+	count := 0
+	for _, item := range p.items {
+		if item.state == "ok" {
+			count++
+		}
+	}
+	return count
+}
+
+func (p setupProgress) overallStatus() string {
+	if p.completeCount() == len(p.items) {
+		return statusText("ready")
+	}
+	return statusText("warning") + " needs setup"
+}
+
+func (p setupProgress) percent() float64 {
+	if len(p.items) == 0 {
+		return 0
+	}
+	return float64(p.completeCount()) / float64(len(p.items))
+}
+
+func (p setupProgress) render(bar progress.Model) string {
+	var b strings.Builder
+	percent := p.percent()
+	fmt.Fprintf(&b, "%d/%d complete (%d%%)\n", p.completeCount(), len(p.items), int(percent*100+0.5))
+	b.WriteString(bar.ViewAs(percent))
+	b.WriteString("\n\n")
+	current := p.currentStep()
+	for _, item := range p.items {
+		fmt.Fprintf(&b, "%s %-9s %-16s %s\n", setupMarker(item, current.name), item.name, statusText(item.state), item.detail)
+	}
+	fmt.Fprintf(&b, "\nCurrent Step: %s\nWhy it matters: %s\nHow to fix: %s", current.name, current.why, current.how)
+	return b.String()
+}
+
+func (p setupProgress) currentStep() setupGuidance {
+	for _, item := range p.items {
+		if item.state != "ok" {
+			return guidanceForStep(item.name)
+		}
+	}
+	return setupGuidance{
+		name: "Complete",
+		why:  "The bridge has a profile, config, secret, running service, and Cursor settings path.",
+		how:  "Use ezyl3 cursor settings when you need to reconnect Cursor.",
+	}
+}
+
+type setupGuidance struct {
+	name string
+	why  string
+	how  string
+}
+
+func guidanceForStep(name string) setupGuidance {
+	switch name {
+	case "Profile":
+		return setupGuidance{
+			name: "Profile",
+			why:  "ezyl3 needs profile.json before it can manage runtime paths and setup mode.",
+			how:  "Run ezyl3 setup or ezyl3 import <runtime-path>.",
+		}
+	case "Config":
+		return setupGuidance{
+			name: "Config",
+			why:  "LiteLLM needs config.yaml before it can expose model tiers to Cursor.",
+			how:  "Run ezyl3 setup to generate config.yaml and model tiers.",
+		}
+	case "Secrets":
+		return setupGuidance{
+			name: "Secrets",
+			why:  "LiteLLM rejects bridge requests unless the master key is configured.",
+			how:  "Run ezyl3 setup with a master key, or pass --master-key in scripts.",
+		}
+	case "Services":
+		return setupGuidance{
+			name: "Services",
+			why:  "LiteLLM must be running before Cursor can reach the bridge.",
+			how:  "Press s to start LiteLLM from the Services tab.",
+		}
+	case "Cursor":
+		return setupGuidance{
+			name: "Cursor",
+			why:  "Cursor needs the bridge base URL and model names before chat requests route through ezyl3.",
+			how:  "Run ezyl3 cursor settings and copy the values into Cursor.",
+		}
+	default:
+		return setupGuidance{
+			name: name,
+			why:  "This setup step needs attention before the bridge is ready.",
+			how:  "Run ezyl3 setup, then refresh this view.",
+		}
+	}
+}
+
+func setupMarker(item setupProgressItem, currentStep string) string {
+	if item.state == "ok" {
+		return "[x]"
+	}
+	if item.name == currentStep {
+		return ">> "
+	}
+	return "[ ]"
+}
+
+func section(title, body string) string {
+	return panelStyle.Render(titleStyle.Render(title)+"\n"+strings.TrimRight(body, "\n")) + "\n"
+}
+
+func tabTitle(tab int) string {
+	if tab >= 0 && tab < len(tabs) {
+		return tabs[tab]
+	}
+	return "Overview"
+}
+
+func (m model) statusSummary() string {
+	progress := m.setupProgress()
+	return "Bridge Status: " + progress.overallStatus() + "  |  Next: " + progress.nextAction
+}
+
+func statusText(state string) string {
+	switch state {
+	case "ok", "ready", core.ServiceStateRunning, core.ServiceStateLoaded:
+		return okStyle.Render(state)
+	case "warning", core.ServiceStateNotConfigured, core.ServiceStateStopped:
+		return warnStyle.Render(state)
+	case "missing", "fail":
+		return missingStyle.Render(state)
+	case core.ServiceStateUnknown:
+		return mutedStyle.Render(state)
+	default:
+		return state
+	}
+}
+
+func checkStatus(check core.Check) string {
+	if check.OK {
+		return statusText("ok")
+	}
+	return statusText("fail")
+}
+
+func boolState(ok bool) string {
+	if ok {
+		return "ok"
+	}
+	return "missing"
+}
+
+func doctorCheckOK(report core.DoctorReport, name string) bool {
+	for _, check := range report.Checks {
+		if check.Name == name {
+			return check.OK
+		}
+	}
+	return false
+}
+
+func cursorSettingsOK(report core.DoctorReport) bool {
+	return doctorCheckOK(report, "Cursor settings")
+}
+
+func serviceState(results []core.ServiceActionResult, service string) string {
+	for _, result := range results {
+		if result.Service == service {
+			return result.State
+		}
+	}
+	return core.ServiceStateUnknown
+}
+
+func tunnelState(results []core.ServiceActionResult) string {
+	state := serviceState(results, "ngrok")
+	if state == core.ServiceStateUnknown {
+		return core.ServiceStateNotConfigured
+	}
+	return state
+}
+
+func profileDetail(profile *core.Profile) string {
+	if profile == nil {
+		return "profile.json missing"
+	}
+	return profile.Name + " / " + profile.Mode
+}
+
+func configDetail(err error) string {
+	if err != nil {
+		return "config needs attention"
+	}
+	return "model tiers readable"
+}
+
+func secretDetail(ok bool) string {
+	if ok {
+		return "master key set"
+	}
+	return "master key missing"
+}
+
+func serviceDetail(results []core.ServiceActionResult) string {
+	state := serviceState(results, "litellm")
+	switch state {
+	case core.ServiceStateRunning:
+		return "LiteLLM running"
+	case core.ServiceStateLoaded:
+		return "LiteLLM loaded"
+	case core.ServiceStateMissing:
+		return "LaunchAgent missing"
+	case core.ServiceStateUnknown:
+		return "status unknown"
+	default:
+		return "LiteLLM " + state
+	}
+}
+
+func cursorDetail(ok bool) string {
+	if ok {
+		return "Cursor settings ready"
+	}
+	return "run ezyl3 cursor settings"
 }
 
 func pathsForRuntime(runtime core.Runtime) core.ProfilePaths {
