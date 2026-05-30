@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"ezyl3/internal/core"
 	"ezyl3/internal/setupwizard"
@@ -41,6 +42,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(serviceCommand(opts))
 	cmd.AddCommand(logsCommand(opts))
 	cmd.AddCommand(proxyCommand(opts))
+	cmd.AddCommand(usageCommand(opts))
 	cmd.AddCommand(tuiCommand(opts))
 	return cmd
 }
@@ -307,6 +309,43 @@ func proxyCommand(opts *options) *cobra.Command {
 	return cmd
 }
 
+func usageCommand(opts *options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "usage",
+		Short: "Inspect local usage data",
+	}
+	var days int
+	var jsonOut bool
+	summaryCmd := &cobra.Command{
+		Use:   "summary",
+		Short: "Show local usage summary",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if days < 1 {
+				return fmt.Errorf("--days must be at least 1")
+			}
+			runtime, err := runtimeFromOptions(opts)
+			if err != nil {
+				return err
+			}
+			now := time.Now()
+			since := startOfDay(now.AddDate(0, 0, -(days - 1)))
+			summary, err := core.SummarizeUsage(runtime, since, now.Add(time.Nanosecond))
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				return PrintJSON(cmd.OutOrStdout(), summary)
+			}
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), formatUsageSummary(summary))
+			return nil
+		},
+	}
+	summaryCmd.Flags().IntVar(&days, "days", 1, "number of calendar days to include")
+	summaryCmd.Flags().BoolVar(&jsonOut, "json", false, "print JSON")
+	cmd.AddCommand(summaryCmd)
+	return cmd
+}
+
 func tuiCommand(opts *options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tui",
@@ -319,6 +358,25 @@ func tuiCommand(opts *options) *cobra.Command {
 			return tui.Run(runtime)
 		},
 	}
+}
+
+func startOfDay(value time.Time) time.Time {
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, value.Location())
+}
+
+func formatUsageSummary(summary core.UsageSummary) string {
+	topModel := "none"
+	if len(summary.TopModels) > 0 {
+		topModel = summary.TopModels[0].Name
+	}
+	return fmt.Sprintf(`Usage summary
+Requests: %d
+Prompt tokens: %d
+Completion tokens: %d
+Total tokens: %d
+Estimated spend: $%.6f
+Top model: %s
+`, summary.Requests, summary.PromptTokens, summary.CompletionTokens, summary.TotalTokens, summary.CostUSD, topModel)
 }
 
 func runtimeFromOptions(opts *options) (core.Runtime, error) {

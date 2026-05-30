@@ -2,10 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"ezyl3/internal/core"
 )
@@ -178,6 +180,40 @@ func TestProxyRunUsesResolvedRuntime(t *testing.T) {
 	}
 }
 
+func TestUsageSummaryPrintsLocalUsage(t *testing.T) {
+	runtime := writeRuntimeFixture(t)
+	writeUsageFixture(t, runtime)
+
+	out, err := execute("usage", "summary", "--path", runtime)
+	if err != nil {
+		t.Fatalf("usage summary returned error: %v\n%s", err, out)
+	}
+
+	for _, want := range []string{"Requests: 2", "Prompt tokens: 15", "Completion tokens: 35", "Total tokens: 50", "Estimated spend: $0.005000", "Top model: litellm-simple"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("usage summary missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestUsageSummaryJSON(t *testing.T) {
+	runtime := writeRuntimeFixture(t)
+	writeUsageFixture(t, runtime)
+
+	out, err := execute("usage", "summary", "--path", runtime, "--json")
+	if err != nil {
+		t.Fatalf("usage summary --json returned error: %v\n%s", err, out)
+	}
+
+	var summary core.UsageSummary
+	if err := json.Unmarshal([]byte(out), &summary); err != nil {
+		t.Fatalf("usage summary JSON did not decode: %v\n%s", err, out)
+	}
+	if summary.Requests != 2 || summary.TotalTokens != 50 {
+		t.Fatalf("summary = %#v", summary)
+	}
+}
+
 func execute(args ...string) (string, error) {
 	var out bytes.Buffer
 	cmd := NewRootCommand()
@@ -205,4 +241,22 @@ func writeRuntimeFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return runtime
+}
+
+func writeUsageFixture(t *testing.T, runtime string) {
+	t.Helper()
+	store, err := core.OpenUsageStore(filepath.Join(runtime, core.UsageDBFileName))
+	if err != nil {
+		t.Fatalf("OpenUsageStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Now().Add(-time.Hour)
+	for _, event := range []core.UsageEvent{
+		{CreatedAt: now, Model: "litellm-simple", Provider: "huggingface", PromptTokens: 10, CompletionTokens: 20, TotalTokens: 30, CostUSD: 0.003, Status: "success"},
+		{CreatedAt: now.Add(10 * time.Minute), Model: "litellm-simple", Provider: "huggingface", PromptTokens: 5, CompletionTokens: 15, TotalTokens: 20, CostUSD: 0.002, Status: "success"},
+	} {
+		if err := store.Record(event); err != nil {
+			t.Fatalf("Record returned error: %v", err)
+		}
+	}
 }

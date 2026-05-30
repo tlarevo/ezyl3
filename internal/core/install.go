@@ -47,10 +47,12 @@ const DefaultLiteLLMConfig = `model_list:
       api_base: https://ollama.com
       api_key: os.environ/OLLAMA_API_KEY
 litellm_settings:
+  callbacks: ezyl3_usage_callback.proxy_handler_instance
   drop_params: true
   num_retries: 2
   request_timeout: 600
   set_verbose: false
+  turn_off_message_logging: true
   fallbacks:
     - litellm-simple: ["litellm-simple-fb"]
     - litellm-medium: ["litellm-medium-fb"]
@@ -59,6 +61,8 @@ litellm_settings:
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
 `
+
+const UsageCallbackFileName = "ezyl3_usage_callback.py"
 
 func CreateManagedProfile(paths ProfilePaths, secrets Secrets, domain string) (Profile, error) {
 	if err := os.MkdirAll(paths.ProfileDir, 0o755); err != nil {
@@ -71,6 +75,16 @@ func CreateManagedProfile(paths ProfilePaths, secrets Secrets, domain string) (P
 		return Profile{}, err
 	}
 	if err := WriteSecrets(filepath.Join(paths.ProfileDir, ".env"), secrets); err != nil {
+		return Profile{}, err
+	}
+	store, err := OpenUsageStore(filepath.Join(paths.ProfileDir, UsageDBFileName))
+	if err != nil {
+		return Profile{}, err
+	}
+	if err := store.Close(); err != nil {
+		return Profile{}, err
+	}
+	if err := os.WriteFile(filepath.Join(paths.ProfileDir, UsageCallbackFileName), []byte(UsageCallbackPython), 0o644); err != nil {
 		return Profile{}, err
 	}
 	profile := Profile{Name: paths.Profile, Mode: ProfileModeManaged, RuntimeDir: paths.ProfileDir, Port: 4400, TunnelProvider: "ngrok", Domain: domain, Paths: paths}
@@ -135,3 +149,74 @@ func runCommand(dir, name string, args ...string) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
+
+const UsageCallbackPython = `import os
+import sqlite3
+from datetime import datetime, timezone
+from litellm.integrations.custom_logger import CustomLogger
+
+
+class Ezyl3UsageHandler(CustomLogger):
+    async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
+        self._record("success", kwargs, response_obj, start_time, end_time, "")
+
+    async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
+        self._record("failure", kwargs, response_obj, start_time, end_time, type(response_obj).__name__[:200])
+
+    def _record(self, status, kwargs, response_obj, start_time, end_time, error):
+        db_path = os.environ.get("EZYL3_USAGE_DB")
+        if not db_path:
+            return
+        try:
+            usage = self._value(response_obj, "usage", {}) or {}
+            model = str(kwargs.get("model") or self._value(response_obj, "model", "") or "")
+            provider = model.split("/", 1)[0] if "/" in model else ""
+            duration_ms = int(max((end_time - start_time).total_seconds() * 1000, 0))
+            with sqlite3.connect(db_path, timeout=5) as db:
+                self._ensure_schema(db)
+                db.execute(
+                    """INSERT INTO usage_events (
+                        created_at, model, provider, prompt_tokens, completion_tokens,
+                        total_tokens, cost_usd, duration_ms, status, error
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        model,
+                        provider,
+                        int(self._value(usage, "prompt_tokens", 0) or 0),
+                        int(self._value(usage, "completion_tokens", 0) or 0),
+                        int(self._value(usage, "total_tokens", 0) or 0),
+                        float(kwargs.get("response_cost") or 0),
+                        duration_ms,
+                        status,
+                        error,
+                    ),
+                )
+        except Exception:
+            return
+
+    def _value(self, obj, name, default=None):
+        if isinstance(obj, dict):
+            return obj.get(name, default)
+        return getattr(obj, name, default)
+
+    def _ensure_schema(self, db):
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS usage_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                model TEXT NOT NULL DEFAULT '',
+                provider TEXT NOT NULL DEFAULT '',
+                prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                total_tokens INTEGER NOT NULL DEFAULT 0,
+                cost_usd REAL NOT NULL DEFAULT 0,
+                duration_ms INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT '',
+                error TEXT NOT NULL DEFAULT ''
+            )"""
+        )
+
+
+proxy_handler_instance = Ezyl3UsageHandler()
+`
