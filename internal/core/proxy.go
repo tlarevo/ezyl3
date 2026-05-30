@@ -34,7 +34,7 @@ func BuildProxyCommand(runtime Runtime) (ProxyCommandSpec, error) {
 	}
 	litellm := filepath.Join(runtimePath, ".venv", "bin", "litellm")
 	if _, err := os.Stat(litellm); err != nil {
-		return ProxyCommandSpec{}, fmt.Errorf("LiteLLM binary missing at %s; run ezyl3 setup without --skip-python-deps or install litellm[proxy]", litellm)
+		return ProxyCommandSpec{}, fmt.Errorf("LiteLLM binary missing at %s; run ezyl3 setup without --skip-python-deps to recreate the managed environment", litellm)
 	}
 	env, err := ReadEnvFile(filepath.Join(runtimePath, ".env"))
 	if err != nil {

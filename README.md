@@ -8,7 +8,6 @@ Requirements:
 
 - macOS
 - Go 1.24 or newer
-- Python 3.12 or 3.13
 - `ngrok`, only if you want a public tunnel
 
 Build:
@@ -39,6 +38,8 @@ Create the default managed profile:
 
 `setup` opens a guided terminal wizard when it is attached to a terminal. The wizard uses masked inputs for secrets, lets you leave ngrok blank for local-only setup, shows a review step before writing files, runs setup with progress feedback, generates a LiteLLM master key when you do not provide one, and finishes with a redacted Cursor-ready summary.
 
+Managed setup is self-contained: it uses `uv` to create the profile virtual environment and install LiteLLM without modifying Homebrew, pyenv, mise, shell profiles, or your global Python. If a usable `uv` is on `PATH`, ezyl3 uses it. Otherwise ezyl3 downloads a pinned `uv` release into its own cache after verifying the release checksum, then uses uv-managed Python 3.13 for the profile.
+
 For scripted setup:
 
 ```bash
@@ -61,6 +62,7 @@ Managed profile files are written under the XDG data/state directories, usually:
 - Profile descriptor: `~/.local/share/ezyl3/profiles/default/profile.json`
 - Usage database: `~/.local/share/ezyl3/profiles/default/usage.sqlite`
 - Logs: `~/.local/state/ezyl3/profiles/default/logs`
+- Bootstrap tooling and Python cache: `~/.cache/ezyl3`
 - LaunchAgents: `~/Library/LaunchAgents/com.ezyl3.default.*.plist`
 
 Sample profile descriptors live in `docs/examples/`:
@@ -74,6 +76,7 @@ Sample profile descriptors live in `docs/examples/`:
 - `name`: profile name used with `--profile`
 - `mode`: `managed` or `external`
 - `runtime_dir`: LiteLLM runtime directory
+- `logs_dir`: managed profile log directory, when logs live outside the runtime directory
 - `port`: LiteLLM proxy port
 - `tunnel_provider`: currently `ngrok`
 - `domain`: optional ngrok domain for tunneled profiles

@@ -9,11 +9,11 @@ import (
 )
 
 type fakeInstaller struct {
-	dirs []string
+	paths []ProfilePaths
 }
 
-func (f *fakeInstaller) InstallPythonDeps(runtimeDir string) error {
-	f.dirs = append(f.dirs, runtimeDir)
+func (f *fakeInstaller) InstallPythonDeps(paths ProfilePaths) error {
+	f.paths = append(f.paths, paths)
 	return nil
 }
 
@@ -59,8 +59,8 @@ func TestRunSetupCreatesLocalOnlyProfileAndRedactsSecrets(t *testing.T) {
 	if len(writer.calls) != 1 || writer.calls[0].domain != "" || writer.calls[0].port != 4400 || writer.calls[0].executablePath != "/usr/local/bin/ezyl3" {
 		t.Fatalf("launch writer calls = %#v", writer.calls)
 	}
-	if len(installer.dirs) != 1 || installer.dirs[0] != paths.ProfileDir {
-		t.Fatalf("installer dirs = %#v", installer.dirs)
+	if len(installer.paths) != 1 || installer.paths[0] != paths {
+		t.Fatalf("installer paths = %#v", installer.paths)
 	}
 	for _, path := range []string{"config.yaml", ".env", "profile.json", UsageDBFileName, "ezyl3_usage_callback.py"} {
 		if _, err := os.Stat(filepath.Join(paths.ProfileDir, path)); err != nil {

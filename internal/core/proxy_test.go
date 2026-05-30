@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -58,6 +59,12 @@ func TestBuildProxyCommandReportsMissingLiteLLMBinary(t *testing.T) {
 	_, err := BuildProxyCommand(runtime)
 	if err == nil {
 		t.Fatalf("BuildProxyCommand returned nil error for missing litellm binary")
+	}
+	if !strings.Contains(err.Error(), "run ezyl3 setup") {
+		t.Fatalf("error = %q, want setup guidance", err)
+	}
+	if strings.Contains(err.Error(), "install litellm[proxy]") {
+		t.Fatalf("error should not suggest manual pip install: %q", err)
 	}
 }
 

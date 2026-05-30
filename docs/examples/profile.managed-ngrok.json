@@ -2,6 +2,7 @@
   "name": "work",
   "mode": "managed",
   "runtime_dir": "/Users/you/.local/share/ezyl3/profiles/work",
+  "logs_dir": "/Users/you/.local/state/ezyl3/profiles/work/logs",
   "port": 4400,
   "tunnel_provider": "ngrok",
   "domain": "work.ngrok-free.dev"
