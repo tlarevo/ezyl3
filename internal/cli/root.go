@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"ezyl3/internal/core"
 	"ezyl3/internal/setupwizard"
 	"ezyl3/internal/tui"
+	"ezyl3/internal/version"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -24,6 +26,10 @@ type options struct {
 }
 
 var proxyRunner = core.RunProxy
+
+var newServiceManager = func(paths core.ProfilePaths) core.ServiceManager {
+	return core.ServiceManager{Paths: paths}
+}
 
 func NewRootCommand() *cobra.Command {
 	opts := &options{profile: "default"}
@@ -44,7 +50,100 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(proxyCommand(opts))
 	cmd.AddCommand(usageCommand(opts))
 	cmd.AddCommand(tuiCommand(opts))
+	cmd.AddCommand(versionCommand())
+	cmd.AddCommand(uninstallCommand(opts))
 	return cmd
+}
+
+func uninstallCommand(opts *options) *cobra.Command {
+	var dryRun bool
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "uninstall",
+		Short: "Remove a managed profile and the files ezyl3 created",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			paths, err := core.ResolvePaths(envMap(), opts.profile)
+			if err != nil {
+				return err
+			}
+			profile, err := core.LoadProfileFromRuntime(paths.ProfileDir)
+			if err != nil {
+				// No descriptor: treat as a managed profile shaped by paths so a
+				// half-written profile can still be cleaned up.
+				profile = core.Profile{Name: paths.Profile, Mode: core.ProfileModeManaged}
+			}
+			plan := core.PlanUninstall(paths, profile)
+
+			out := cmd.OutOrStdout()
+			_, _ = fmt.Fprintf(out, "Uninstall profile %q (%s)\n", plan.Profile, plan.Mode)
+			if plan.ExternalRuntimeDir != "" {
+				_, _ = fmt.Fprintf(out, "Preserving imported runtime: %s\n", plan.ExternalRuntimeDir)
+			}
+			if len(plan.Services) > 0 {
+				_, _ = fmt.Fprintf(out, "Stopping services: %s\n", strings.Join(plan.Services, ", "))
+			}
+			if len(plan.RemovePaths) == 0 {
+				_, _ = fmt.Fprintln(out, "Nothing to remove.")
+				return nil
+			}
+			_, _ = fmt.Fprintln(out, "Removing:")
+			for _, path := range plan.RemovePaths {
+				_, _ = fmt.Fprintf(out, "  %s\n", path)
+			}
+
+			if dryRun {
+				_, _ = fmt.Fprintln(out, "Dry run: no changes made.")
+				return nil
+			}
+			if !force {
+				if !isInteractive(cmd) {
+					return fmt.Errorf("refusing to uninstall without confirmation; rerun with --force")
+				}
+				if !confirm(cmd, "Remove these files? [y/N]: ") {
+					_, _ = fmt.Fprintln(out, "Aborted.")
+					return nil
+				}
+			}
+
+			manager := newServiceManager(paths)
+			if _, stopErr := manager.Stop(); stopErr != nil {
+				// Services may already be stopped or never loaded; removal proceeds.
+				_, _ = fmt.Fprintf(out, "Note: stopping services reported: %v\n", stopErr)
+			}
+			for _, path := range plan.RemovePaths {
+				if err := os.RemoveAll(path); err != nil {
+					return fmt.Errorf("remove %s: %w", path, err)
+				}
+			}
+			_, _ = fmt.Fprintln(out, "Uninstall complete.")
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be removed without removing it")
+	cmd.Flags().BoolVar(&force, "force", false, "remove without interactive confirmation")
+	return cmd
+}
+
+func confirm(cmd *cobra.Command, prompt string) bool {
+	_, _ = fmt.Fprint(cmd.OutOrStdout(), prompt)
+	reader := bufio.NewReader(cmd.InOrStdin())
+	line, err := reader.ReadString('\n')
+	if err != nil && strings.TrimSpace(line) == "" {
+		return false
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes"
+}
+
+func versionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the ezyl3 build version",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), version.String())
+			return nil
+		},
+	}
 }
 
 func doctorCommand(opts *options) *cobra.Command {
