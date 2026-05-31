@@ -51,20 +51,14 @@ rendering step for `tlarevo/homebrew-tap`. The repository secret
 Use direct Go commands for day-to-day development. Brew is for package and
 release validation, not the normal development loop.
 
+### Daily CLI/TUI Checks
+
 ```bash
 go test ./...
 go run ./cmd/ezyl3 --help
 go run ./cmd/ezyl3 version
 go build -o /tmp/ezyl3 ./cmd/ezyl3
 /tmp/ezyl3 version
-```
-
-Use a GoReleaser snapshot to test the release artifact shape before involving
-Homebrew:
-
-```bash
-goreleaser release --snapshot --clean --skip=publish
-find dist -type f -name ezyl3 -perm +111
 ```
 
 Run setup smoke tests with isolated XDG paths so local checks do not touch your
@@ -79,15 +73,54 @@ XDG_CACHE_HOME=/tmp/ezyl3-smoke/cache \
 /tmp/ezyl3 setup --skip-python-deps --force
 ```
 
-Use Homebrew only when validating packaging and release delivery:
+### Release Artifact Checks
+
+Use a GoReleaser snapshot to test the release artifact shape before involving
+Homebrew:
 
 ```bash
-brew install --formula ./Formula/ezyl3.rb
+goreleaser release --snapshot --clean --skip=publish
+find dist -type f -name ezyl3 -print
+```
+
+Render a formula from release checksums before the tap update runs. This verifies
+the formula content, but the rendered formula only installs successfully when the
+matching GitHub release archives are published.
+
+```bash
+TAG="v$(awk '/darwin_arm64/ { name=$2; sub(/^ezyl3_/, "", name); sub(/_darwin_arm64\.tar\.gz$/, "", name); print name; exit }' dist/checksums.txt)"
+mkdir -p /tmp/ezyl3-formula/Formula
+go run ./scripts/update-homebrew-formula \
+  --tag "$TAG" \
+  --checksums dist/checksums.txt \
+  --template scripts/templates/ezyl3.rb.tmpl \
+  --output /tmp/ezyl3-formula/Formula/ezyl3.rb
+ruby -c /tmp/ezyl3-formula/Formula/ezyl3.rb
+```
+
+### Homebrew Acceptance Checks
+
+Use Homebrew for packaging acceptance, not for every code change. Against an
+already-published release tag, render the formula from that release's checksums
+and install it directly:
+
+```bash
+TAG=v0.1.0
+mkdir -p /tmp/ezyl3-formula/Formula
+curl -fsSL \
+  "https://github.com/tlarevo/ezyl3/releases/download/${TAG}/checksums.txt" \
+  -o /tmp/ezyl3-checksums.txt
+go run ./scripts/update-homebrew-formula \
+  --tag "$TAG" \
+  --checksums /tmp/ezyl3-checksums.txt \
+  --template scripts/templates/ezyl3.rb.tmpl \
+  --output /tmp/ezyl3-formula/Formula/ezyl3.rb
+brew install --formula /tmp/ezyl3-formula/Formula/ezyl3.rb
 ezyl3 version
 brew uninstall ezyl3
 ```
 
-After a real release, validate the public tap path:
+After the release workflow pushes the tap update, validate the public user path:
 
 ```bash
 brew tap tlarevo/tap
