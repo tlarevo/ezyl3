@@ -284,9 +284,12 @@ func TestUninstallWithoutForceIsRefusedNonInteractively(t *testing.T) {
 	useFakeServiceManager(t)
 	_, runtime := createManagedProfile(t)
 
-	out, _ := execute("uninstall")
-	if !strings.Contains(out, "--force") {
-		t.Fatalf("expected refusal mentioning --force:\n%s", out)
+	out, err := execute("uninstall")
+	if err == nil {
+		t.Fatalf("expected uninstall without --force to be refused")
+	}
+	if !strings.Contains(out, "--force") && !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("expected refusal mentioning --force:\nstdout:\n%s\nerror: %v", out, err)
 	}
 	if _, statErr := os.Stat(runtime); statErr != nil {
 		t.Fatalf("refused uninstall should not remove the profile: %v", statErr)

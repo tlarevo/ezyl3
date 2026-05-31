@@ -39,12 +39,6 @@ func PlanUninstall(paths ProfilePaths, profile Profile) UninstallPlan {
 
 	plan := UninstallPlan{Profile: paths.Profile, Mode: mode}
 
-	for _, service := range []string{"litellm", "ngrok"} {
-		if _, err := os.Stat(paths.LaunchAgentPath(service)); err == nil {
-			plan.Services = append(plan.Services, service)
-		}
-	}
-
 	seen := map[string]bool{}
 	add := func(path string) {
 		path = strings.TrimSpace(path)
@@ -62,8 +56,10 @@ func PlanUninstall(paths ProfilePaths, profile Profile) UninstallPlan {
 		add(paths.LogsDir)
 	}
 	for _, service := range []string{"litellm", "ngrok"} {
-		if _, err := os.Stat(paths.LaunchAgentPath(service)); err == nil {
-			add(paths.LaunchAgentPath(service))
+		launchAgentPath := paths.LaunchAgentPath(service)
+		if _, err := os.Stat(launchAgentPath); err == nil {
+			plan.Services = append(plan.Services, service)
+			add(launchAgentPath)
 		}
 	}
 
