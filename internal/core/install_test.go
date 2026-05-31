@@ -64,8 +64,8 @@ func TestRenderLiteLLMConfigIncludesAutoAndDowngradeFallbacks(t *testing.T) {
 
 func TestRenderLiteLLMConfigBillToHeaderIsOptional(t *testing.T) {
 	withBill := RenderLiteLLMConfig(Secrets{HFBillTo: "eventinc-gmbh"})
-	if !strings.Contains(withBill, "X-HF-Bill-To: eventinc-gmbh") {
-		t.Fatalf("expected X-HF-Bill-To header when bill-to is set:\n%s", withBill)
+	if !strings.Contains(withBill, `X-HF-Bill-To: "eventinc-gmbh"`) {
+		t.Fatalf("expected quoted X-HF-Bill-To header when bill-to is set:\n%s", withBill)
 	}
 
 	withoutBill := RenderLiteLLMConfig(Secrets{})
