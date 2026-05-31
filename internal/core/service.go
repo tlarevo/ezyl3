@@ -49,6 +49,10 @@ func (m ServiceManager) Stop() ([]ServiceActionResult, error) {
 	return m.run("stop")
 }
 
+func (m ServiceManager) StopServices(services []string) ([]ServiceActionResult, error) {
+	return m.runServices("stop", services, false)
+}
+
 func (m ServiceManager) Restart() ([]ServiceActionResult, error) {
 	return m.run("restart")
 }
@@ -58,6 +62,10 @@ func (m ServiceManager) Status() ([]ServiceActionResult, error) {
 }
 
 func (m ServiceManager) run(action string) ([]ServiceActionResult, error) {
+	return m.runServices(action, []string{"litellm", "ngrok"}, true)
+}
+
+func (m ServiceManager) runServices(action string, services []string, allowMissingOptionalNgrok bool) ([]ServiceActionResult, error) {
 	runner := m.Runner
 	if runner == nil {
 		runner = LaunchctlRunner{}
@@ -67,18 +75,18 @@ func (m ServiceManager) run(action string) ([]ServiceActionResult, error) {
 		uid = os.Getuid()
 	}
 	results := []ServiceActionResult{}
-	for _, service := range []string{"litellm", "ngrok"} {
+	for _, service := range services {
 		plist := m.Paths.LaunchAgentPath(service)
 		if _, err := os.Stat(plist); err != nil {
 			state := ServiceStateMissing
 			detail := "missing LaunchAgent: " + plist
-			if service == "ngrok" && os.IsNotExist(err) {
+			if allowMissingOptionalNgrok && service == "ngrok" && os.IsNotExist(err) {
 				state = ServiceStateNotConfigured
 				detail = "ngrok LaunchAgent is not configured for this profile"
 			}
 			result := ServiceActionResult{Service: service, Action: action, State: state, Detail: detail}
 			results = append(results, result)
-			if service == "litellm" || !os.IsNotExist(err) {
+			if !allowMissingOptionalNgrok || service == "litellm" || !os.IsNotExist(err) {
 				return results, fmt.Errorf("%s %s: %s", action, service, detail)
 			}
 			continue

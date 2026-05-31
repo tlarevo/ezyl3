@@ -1,0 +1,26 @@
+class Ezyl3 < Formula
+  desc "Manage a local LiteLLM bridge for Cursor"
+  homepage "https://github.com/{{ .RepoOwner }}/{{ .RepoName }}"
+  version "{{ .Version }}"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "{{ .ARM64URL }}"
+      sha256 "{{ .ARM64SHA256 }}"
+    end
+
+    on_intel do
+      url "{{ .AMD64URL }}"
+      sha256 "{{ .AMD64SHA256 }}"
+    end
+  end
+
+  def install
+    bin.install "ezyl3"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/ezyl3 version")
+  end
+end

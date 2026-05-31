@@ -109,9 +109,11 @@ func uninstallCommand(opts *options) *cobra.Command {
 			}
 
 			manager := newServiceManager(paths)
-			if _, stopErr := manager.Stop(); stopErr != nil {
-				// Services may already be stopped or never loaded; removal proceeds.
-				_, _ = fmt.Fprintf(out, "Note: stopping services reported: %v\n", stopErr)
+			if len(plan.Services) > 0 {
+				if _, stopErr := manager.StopServices(plan.Services); stopErr != nil {
+					// Services may already be stopped or never loaded; removal proceeds.
+					_, _ = fmt.Fprintf(out, "Note: stopping services reported: %v\n", stopErr)
+				}
 			}
 			for _, path := range plan.RemovePaths {
 				if err := os.RemoveAll(path); err != nil {
