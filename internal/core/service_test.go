@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -85,6 +86,38 @@ func TestServiceErrorsIncludeActionAndService(t *testing.T) {
 	_, err := manager.Start()
 	if err == nil || !strings.Contains(err.Error(), "start litellm") || !strings.Contains(err.Error(), "launchctl failed") {
 		t.Fatalf("Start error = %v", err)
+	}
+}
+
+func TestServiceManagerStopServicesStopsOnlyRequestedServices(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	writeServiceFile(t, paths.LaunchAgentPath("ngrok"))
+	runner := &fakeServiceRunner{}
+	manager := ServiceManager{Paths: paths, Runner: runner, UID: 501}
+
+	results, err := manager.StopServices([]string{"ngrok"})
+	if err != nil {
+		t.Fatalf("StopServices returned error: %v", err)
+	}
+	if len(results) != 1 || results[0].Service != "ngrok" {
+		t.Fatalf("results = %#v, want only ngrok", results)
+	}
+	want := []string{"bootout", "gui/501", paths.LaunchAgentPath("ngrok")}
+	if len(runner.calls) != 1 || !reflect.DeepEqual(runner.calls[0], want) {
+		t.Fatalf("launchctl calls = %#v, want %#v", runner.calls, [][]string{want})
+	}
+}
+
+func TestServiceManagerStopServicesReportsMissingRequestedService(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	manager := ServiceManager{Paths: paths, Runner: &fakeServiceRunner{}, UID: 501}
+
+	results, err := manager.StopServices([]string{"ngrok"})
+	if err == nil || !strings.Contains(err.Error(), "stop ngrok") || !strings.Contains(err.Error(), "missing LaunchAgent") {
+		t.Fatalf("StopServices error = %v", err)
+	}
+	if findServiceResult(results, "ngrok").State != ServiceStateMissing {
+		t.Fatalf("ngrok result = %#v", findServiceResult(results, "ngrok"))
 	}
 }
 

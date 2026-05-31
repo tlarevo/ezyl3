@@ -244,6 +244,15 @@ type fakeLaunchctl struct{}
 
 func (fakeLaunchctl) RunLaunchctl(args ...string) (string, error) { return "", nil }
 
+type recordingLaunchctl struct {
+	calls [][]string
+}
+
+func (r *recordingLaunchctl) RunLaunchctl(args ...string) (string, error) {
+	r.calls = append(r.calls, append([]string(nil), args...))
+	return "", nil
+}
+
 func useFakeServiceManager(t *testing.T) {
 	t.Helper()
 	original := newServiceManager
@@ -293,6 +302,38 @@ func TestUninstallWithoutForceIsRefusedNonInteractively(t *testing.T) {
 	}
 	if _, statErr := os.Stat(runtime); statErr != nil {
 		t.Fatalf("refused uninstall should not remove the profile: %v", statErr)
+	}
+}
+
+func TestUninstallForceStopsOnlyPlannedNgrokService(t *testing.T) {
+	home, _ := createManagedProfile(t)
+	paths, err := core.ResolvePaths(map[string]string{"HOME": home}, "default")
+	if err != nil {
+		t.Fatalf("ResolvePaths returned error: %v", err)
+	}
+	if err := os.Remove(paths.LaunchAgentPath("litellm")); err != nil {
+		t.Fatalf("remove litellm plist: %v", err)
+	}
+	if err := os.WriteFile(paths.LaunchAgentPath("ngrok"), []byte("plist"), 0o600); err != nil {
+		t.Fatalf("write ngrok plist: %v", err)
+	}
+	runner := &recordingLaunchctl{}
+	original := newServiceManager
+	t.Cleanup(func() { newServiceManager = original })
+	newServiceManager = func(paths core.ProfilePaths) core.ServiceManager {
+		return core.ServiceManager{Paths: paths, Runner: runner, UID: 501}
+	}
+
+	out, err := execute("uninstall", "--force")
+	if err != nil {
+		t.Fatalf("uninstall returned error: %v\n%s", err, out)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("launchctl calls = %#v, want only ngrok bootout", runner.calls)
+	}
+	call := runner.calls[0]
+	if len(call) != 3 || call[0] != "bootout" || call[1] != "gui/501" || call[2] != paths.LaunchAgentPath("ngrok") {
+		t.Fatalf("launchctl call = %#v, want ngrok bootout", call)
 	}
 }
 
