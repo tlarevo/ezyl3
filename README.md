@@ -109,6 +109,14 @@ Common model names:
 - `litellm-complex`
 - `litellm-reasoning`
 
+`litellm-auto` is a LiteLLM complexity router: it scores each request and routes it
+to the `simple`, `medium`, `complex`, or `reasoning` tier automatically, defaulting
+to `medium`. Select `litellm-auto` in Cursor unless you want to pin a specific tier.
+
+If you set a Hugging Face billing org during setup (`--hf-bill-to` or the wizard
+bill-to field), managed setup adds an `X-HF-Bill-To` header to Hugging Face requests
+so usage bills to that org. Leaving it blank omits the header entirely.
+
 ## Services and Logs
 
 Manage LaunchAgents:
@@ -155,6 +163,37 @@ Open the setup companion TUI:
 ```
 
 The TUI shows setup overview, local usage, profile mode, services, model tiers, doctor checks, and recent LiteLLM log output. In the Services view, press `s` to start, `x` to stop, and `k` to restart services.
+
+## Version
+
+Print the build version:
+
+```bash
+./ezyl3 version
+```
+
+A binary built from source reports `dev`; released binaries report their tag.
+
+## Uninstall
+
+Remove a managed profile and everything `ezyl3` created for it:
+
+```bash
+./ezyl3 uninstall --dry-run
+./ezyl3 uninstall
+./ezyl3 uninstall --force
+```
+
+`uninstall` stops the profile's services, then removes the managed profile
+directory, its logs directory, and the LaunchAgents `ezyl3` wrote. Use `--dry-run`
+to print exactly what would be removed without changing anything. `uninstall`
+prompts for confirmation when run interactively; pass `--force` to skip the prompt
+for scripts.
+
+External (imported) profiles are treated as read-only: `uninstall` removes only
+`ezyl3`'s own profile metadata and LaunchAgents and never deletes the imported
+runtime files. The shared `~/.cache/ezyl3` directory is also left in place because
+other profiles may use it.
 
 ## Troubleshooting
 

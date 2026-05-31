@@ -3,47 +3,54 @@ package core
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-const DefaultLiteLLMConfig = `model_list:
-  - model_name: litellm-simple
+// RenderLiteLLMConfig builds the managed LiteLLM config.yaml. It defines the four
+// Hugging Face tiers, their Ollama fallback tiers, and the litellm-auto complexity
+// router that selects a tier per request. The X-HF-Bill-To org-billing header is
+// added to Hugging Face entries only when a bill-to org is supplied; when it is
+// blank the header is omitted entirely rather than emitted empty.
+func RenderLiteLLMConfig(secrets Secrets) string {
+	billTo := strings.TrimSpace(secrets.HFBillTo)
+	hf := func(name, model string) string {
+		entry := fmt.Sprintf("  - model_name: %s\n    litellm_params:\n      model: %s\n      api_key: os.environ/HF_TOKEN\n", name, model)
+		if billTo != "" {
+			entry += fmt.Sprintf("      extra_headers:\n        X-HF-Bill-To: %q\n", billTo)
+		}
+		return entry
+	}
+	ollama := func(name, model string) string {
+		return fmt.Sprintf("  - model_name: %s\n    litellm_params:\n      model: %s\n      api_base: https://ollama.com\n      api_key: os.environ/OLLAMA_API_KEY\n", name, model)
+	}
+
+	var b strings.Builder
+	b.WriteString("model_list:\n")
+	b.WriteString(hf("litellm-simple", "huggingface/deepseek-ai/DeepSeek-V4-Flash"))
+	b.WriteString(hf("litellm-medium", "huggingface/deepseek-ai/DeepSeek-V4-Flash"))
+	b.WriteString(hf("litellm-complex", "huggingface/deepseek-ai/DeepSeek-V4-Pro"))
+	b.WriteString(hf("litellm-reasoning", "huggingface/deepseek-ai/DeepSeek-V4-Pro"))
+	b.WriteString(ollama("litellm-simple-fb", "ollama_chat/gpt-oss:20b"))
+	b.WriteString(ollama("litellm-medium-fb", "ollama_chat/qwen3-coder-next"))
+	b.WriteString(ollama("litellm-complex-fb", "ollama_chat/deepseek-v3.2"))
+	b.WriteString(ollama("litellm-reasoning-fb", "ollama_chat/deepseek-v4-pro"))
+	b.WriteString(`  - model_name: litellm-auto
     litellm_params:
-      model: huggingface/deepseek-ai/DeepSeek-V4-Flash
-      api_key: os.environ/HF_TOKEN
-  - model_name: litellm-medium
-    litellm_params:
-      model: huggingface/deepseek-ai/DeepSeek-V4-Flash
-      api_key: os.environ/HF_TOKEN
-  - model_name: litellm-complex
-    litellm_params:
-      model: huggingface/deepseek-ai/DeepSeek-V4-Pro
-      api_key: os.environ/HF_TOKEN
-  - model_name: litellm-reasoning
-    litellm_params:
-      model: huggingface/deepseek-ai/DeepSeek-V4-Pro
-      api_key: os.environ/HF_TOKEN
-  - model_name: litellm-simple-fb
-    litellm_params:
-      model: ollama_chat/gpt-oss:20b
-      api_base: https://ollama.com
-      api_key: os.environ/OLLAMA_API_KEY
-  - model_name: litellm-medium-fb
-    litellm_params:
-      model: ollama_chat/qwen3-coder-next
-      api_base: https://ollama.com
-      api_key: os.environ/OLLAMA_API_KEY
-  - model_name: litellm-complex-fb
-    litellm_params:
-      model: ollama_chat/deepseek-v3.2
-      api_base: https://ollama.com
-      api_key: os.environ/OLLAMA_API_KEY
-  - model_name: litellm-reasoning-fb
-    litellm_params:
-      model: ollama_chat/deepseek-v4-pro
-      api_base: https://ollama.com
-      api_key: os.environ/OLLAMA_API_KEY
+      model: auto_router/complexity_router
+      complexity_router_config:
+        tiers:
+          SIMPLE: litellm-simple
+          MEDIUM: litellm-medium
+          COMPLEX: litellm-complex
+          REASONING: litellm-reasoning
+        tier_boundaries:
+          simple_medium: 0.15
+          medium_complex: 0.35
+          complex_reasoning: 0.60
+        default_model: litellm-medium
 litellm_settings:
   callbacks: ezyl3_usage_callback.proxy_handler_instance
   drop_params: true
@@ -52,13 +59,19 @@ litellm_settings:
   set_verbose: false
   turn_off_message_logging: true
   fallbacks:
+    - litellm-auto: ["litellm-simple-fb", "litellm-medium-fb", "litellm-complex-fb", "litellm-reasoning-fb"]
     - litellm-simple: ["litellm-simple-fb"]
     - litellm-medium: ["litellm-medium-fb"]
     - litellm-complex: ["litellm-complex-fb"]
     - litellm-reasoning: ["litellm-reasoning-fb"]
+    - litellm-medium-fb: ["litellm-simple-fb"]
+    - litellm-complex-fb: ["litellm-simple-fb"]
+    - litellm-reasoning-fb: ["litellm-simple-fb"]
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-`
+`)
+	return b.String()
+}
 
 const UsageCallbackFileName = "ezyl3_usage_callback.py"
 
@@ -69,7 +82,7 @@ func CreateManagedProfile(paths ProfilePaths, secrets Secrets, domain string) (P
 	if err := os.MkdirAll(paths.LogsDir, 0o755); err != nil {
 		return Profile{}, err
 	}
-	if err := os.WriteFile(filepath.Join(paths.ProfileDir, "config.yaml"), []byte(DefaultLiteLLMConfig), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.ProfileDir, "config.yaml"), []byte(RenderLiteLLMConfig(secrets)), 0o644); err != nil {
 		return Profile{}, err
 	}
 	if err := WriteSecrets(filepath.Join(paths.ProfileDir, ".env"), secrets); err != nil {

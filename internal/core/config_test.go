@@ -37,6 +37,9 @@ model_list:
   - model_name: litellm-reasoning-fb
     litellm_params:
       model: ollama_chat/deepseek-v4-pro
+  - model_name: litellm-auto
+    litellm_params:
+      model: auto_router/complexity_router
 litellm_settings:
   fallbacks:
     - litellm-medium: ["litellm-medium-fb"]

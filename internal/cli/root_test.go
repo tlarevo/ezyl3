@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ezyl3/internal/core"
+	"ezyl3/internal/version"
 )
 
 const cliSampleConfig = `
@@ -30,6 +31,8 @@ model_list:
     litellm_params: {model: ollama_chat/complex}
   - model_name: litellm-reasoning-fb
     litellm_params: {model: ollama_chat/reasoning}
+  - model_name: litellm-auto
+    litellm_params: {model: auto_router/complexity_router}
 litellm_settings:
   fallbacks:
     - litellm-medium: ["litellm-medium-fb"]
@@ -211,6 +214,130 @@ func TestUsageSummaryJSON(t *testing.T) {
 	}
 	if summary.Requests != 2 || summary.TotalTokens != 50 {
 		t.Fatalf("summary = %#v", summary)
+	}
+}
+
+func TestVersionPrintsBuildVersion(t *testing.T) {
+	original := version.Version
+	t.Cleanup(func() { version.Version = original })
+
+	version.Version = "v9.9.9"
+	out, err := execute("version")
+	if err != nil {
+		t.Fatalf("version returned error: %v\n%s", err, out)
+	}
+	if strings.TrimSpace(out) != "v9.9.9" {
+		t.Fatalf("version output = %q, want v9.9.9", out)
+	}
+
+	version.Version = ""
+	out, err = execute("version")
+	if err != nil {
+		t.Fatalf("version returned error: %v\n%s", err, out)
+	}
+	if strings.TrimSpace(out) != "dev" {
+		t.Fatalf("version output with empty Version = %q, want dev", out)
+	}
+}
+
+type fakeLaunchctl struct{}
+
+func (fakeLaunchctl) RunLaunchctl(args ...string) (string, error) { return "", nil }
+
+func useFakeServiceManager(t *testing.T) {
+	t.Helper()
+	original := newServiceManager
+	t.Cleanup(func() { newServiceManager = original })
+	newServiceManager = func(paths core.ProfilePaths) core.ServiceManager {
+		return core.ServiceManager{Paths: paths, Runner: fakeLaunchctl{}, UID: 501}
+	}
+}
+
+func createManagedProfile(t *testing.T) (home, runtime string) {
+	t.Helper()
+	home = t.TempDir()
+	t.Setenv("HOME", home)
+	out, err := execute("setup", "--skip-python-deps", "--hf-token", "hf_secret", "--ollama-api-key", "ollama_secret")
+	if err != nil {
+		t.Fatalf("setup returned error: %v\n%s", err, out)
+	}
+	return home, filepath.Join(home, ".local", "share", "ezyl3", "profiles", "default")
+}
+
+func TestUninstallDryRunRemovesNothing(t *testing.T) {
+	useFakeServiceManager(t)
+	_, runtime := createManagedProfile(t)
+
+	out, err := execute("uninstall", "--dry-run")
+	if err != nil {
+		t.Fatalf("uninstall returned error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Dry run") || !strings.Contains(out, runtime) {
+		t.Fatalf("dry-run output missing expectations:\n%s", out)
+	}
+	if _, statErr := os.Stat(runtime); statErr != nil {
+		t.Fatalf("dry-run should not remove the profile: %v", statErr)
+	}
+}
+
+func TestUninstallWithoutForceIsRefusedNonInteractively(t *testing.T) {
+	useFakeServiceManager(t)
+	_, runtime := createManagedProfile(t)
+
+	out, err := execute("uninstall")
+	if err == nil {
+		t.Fatalf("expected uninstall without --force to be refused")
+	}
+	if !strings.Contains(out, "--force") && !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("expected refusal mentioning --force:\nstdout:\n%s\nerror: %v", out, err)
+	}
+	if _, statErr := os.Stat(runtime); statErr != nil {
+		t.Fatalf("refused uninstall should not remove the profile: %v", statErr)
+	}
+}
+
+func TestUninstallForceRemovesManagedProfile(t *testing.T) {
+	useFakeServiceManager(t)
+	_, runtime := createManagedProfile(t)
+
+	out, err := execute("uninstall", "--force")
+	if err != nil {
+		t.Fatalf("uninstall returned error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Uninstall complete") {
+		t.Fatalf("unexpected output:\n%s", out)
+	}
+	if _, statErr := os.Stat(runtime); !os.IsNotExist(statErr) {
+		t.Fatalf("force uninstall should remove the profile dir: %v", statErr)
+	}
+}
+
+func TestUninstallPreservesExternalRuntime(t *testing.T) {
+	useFakeServiceManager(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	imported := writeRuntimeFixture(t)
+
+	if out, err := execute("import", imported); err != nil {
+		t.Fatalf("import returned error: %v\n%s", err, out)
+	}
+
+	out, err := execute("uninstall", "--force")
+	if err != nil {
+		t.Fatalf("uninstall returned error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Preserving imported runtime") {
+		t.Fatalf("output should note the preserved runtime:\n%s", out)
+	}
+	if strings.Contains(out, "sk-cursor-secret") {
+		t.Fatalf("uninstall leaked a secret:\n%s", out)
+	}
+	if _, statErr := os.Stat(filepath.Join(imported, "config.yaml")); statErr != nil {
+		t.Fatalf("imported runtime must be preserved: %v", statErr)
+	}
+	metadata := filepath.Join(home, ".local", "share", "ezyl3", "profiles", "default")
+	if _, statErr := os.Stat(metadata); !os.IsNotExist(statErr) {
+		t.Fatalf("ezyl3 metadata dir should be removed: %v", statErr)
 	}
 }
 

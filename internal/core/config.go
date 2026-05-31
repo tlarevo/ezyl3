@@ -9,6 +9,7 @@ import (
 )
 
 var RequiredModelNames = []string{
+	"litellm-auto",
 	"litellm-simple",
 	"litellm-medium",
 	"litellm-complex",

@@ -1,0 +1,67 @@
+# GoReleaser config for ezyl3.
+# Distribution is an unsigned Homebrew tap: macOS-only binaries delivered through
+# `brew install` run without the browser quarantine attribute, so notarization is
+# intentionally out of scope for this phase.
+version: 2
+
+project_name: ezyl3
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: ezyl3
+    main: ./cmd/ezyl3
+    binary: ezyl3
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X ezyl3/internal/version.Version={{ .Version }}
+
+archives:
+  - id: ezyl3
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+homebrew_casks:
+  - name: ezyl3
+    binaries:
+      - ezyl3
+    repository:
+      owner: tlarevo
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: "https://github.com/tlarevo/ezyl3"
+    description: "Manage a local LiteLLM bridge for Cursor on macOS"
+    license: "MIT"
+    # The released binaries are unsigned; strip the quarantine attribute so the
+    # cask runs without a Gatekeeper prompt after `brew install`.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ezyl3"]
+          end
+
+release:
+  github:
+    owner: tlarevo
+    name: ezyl3
