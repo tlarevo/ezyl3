@@ -2,7 +2,19 @@
 
 `ezyl3` manages a local LiteLLM bridge for Cursor on macOS. It can create a managed runtime, import an existing LiteLLM runtime as an external profile, write LaunchAgents, show doctor checks, print Cursor settings, manage model tiers, and inspect logs.
 
-## Build and Run From Source
+## Install
+
+```bash
+brew install tlarevo/tap/ezyl3
+```
+
+Released binaries report their tag with:
+
+```bash
+ezyl3 version
+```
+
+## Build From Source
 
 Requirements:
 
@@ -26,6 +38,62 @@ Run tests:
 
 ```bash
 go test ./...
+```
+
+## Releasing
+
+Tagged releases use GoReleaser for GitHub artifacts and a separate formula
+rendering step for `tlarevo/homebrew-tap`. The repository secret
+`HOMEBREW_TAP_TOKEN` must have contents write access to the tap repository.
+
+## Local Testing
+
+Use direct Go commands for day-to-day development. Brew is for package and
+release validation, not the normal development loop.
+
+```bash
+go test ./...
+go run ./cmd/ezyl3 --help
+go run ./cmd/ezyl3 version
+go build -o /tmp/ezyl3 ./cmd/ezyl3
+/tmp/ezyl3 version
+```
+
+Use a GoReleaser snapshot to test the release artifact shape before involving
+Homebrew:
+
+```bash
+goreleaser release --snapshot --clean --skip=publish
+find dist -type f -name ezyl3 -perm +111
+```
+
+Run setup smoke tests with isolated XDG paths so local checks do not touch your
+real profile:
+
+```bash
+HOME=/tmp/ezyl3-smoke \
+XDG_DATA_HOME=/tmp/ezyl3-smoke/data \
+XDG_STATE_HOME=/tmp/ezyl3-smoke/state \
+XDG_CONFIG_HOME=/tmp/ezyl3-smoke/config \
+XDG_CACHE_HOME=/tmp/ezyl3-smoke/cache \
+/tmp/ezyl3 setup --skip-python-deps --force
+```
+
+Use Homebrew only when validating packaging and release delivery:
+
+```bash
+brew install --formula ./Formula/ezyl3.rb
+ezyl3 version
+brew uninstall ezyl3
+```
+
+After a real release, validate the public tap path:
+
+```bash
+brew tap tlarevo/tap
+brew install tlarevo/tap/ezyl3
+ezyl3 version
+brew uninstall ezyl3
 ```
 
 ## Managed Setup
