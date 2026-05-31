@@ -19,7 +19,7 @@ func RenderLiteLLMConfig(secrets Secrets) string {
 	hf := func(name, model string) string {
 		entry := fmt.Sprintf("  - model_name: %s\n    litellm_params:\n      model: %s\n      api_key: os.environ/HF_TOKEN\n", name, model)
 		if billTo != "" {
-			entry += fmt.Sprintf("      extra_headers:\n        X-HF-Bill-To: %s\n", billTo)
+			entry += fmt.Sprintf("      extra_headers:\n        X-HF-Bill-To: %q\n", billTo)
 		}
 		return entry
 	}

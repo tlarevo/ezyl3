@@ -68,6 +68,9 @@ func uninstallCommand(opts *options) *cobra.Command {
 			}
 			profile, err := core.LoadProfileFromRuntime(paths.ProfileDir)
 			if err != nil {
+				if !os.IsNotExist(err) {
+					return fmt.Errorf("load profile descriptor: %w", err)
+				}
 				// No descriptor: treat as a managed profile shaped by paths so a
 				// half-written profile can still be cleaned up.
 				profile = core.Profile{Name: paths.Profile, Mode: core.ProfileModeManaged}

@@ -74,7 +74,7 @@ flowchart TD
   Binary --> VersionCmd["ezyl3 version"]
   Binary --> Uninstall["ezyl3 uninstall"]
   Uninstall --> Services["ServiceManager stop + bootout"]
-  Uninstall --> Paths["Remove profile, logs, LaunchAgents, caches"]
+  Uninstall --> Paths["Remove profile, logs, LaunchAgents (shared ~/.cache/ezyl3 preserved)"]
 ```
 
 ## User Stories
@@ -132,8 +132,9 @@ flowchart TD
     own metadata; imported runtime files must never be deleted.
   - Stop and bootout services via the existing `ServiceManager` before removing
     LaunchAgent plists.
-  - Remove the managed profile directory, logs directory, and the `ezyl3` caches
-    it created.
+  - Remove the managed profile directory, logs directory, and the LaunchAgents
+    `ezyl3` wrote. The shared `~/.cache/ezyl3` directory is preserved because other
+    profiles may use it; only profile-owned paths are removed.
   - Support `--dry-run` to print the planned removals without performing them.
   - Require interactive confirmation, with `--force` to skip confirmation for
     scripted use.
