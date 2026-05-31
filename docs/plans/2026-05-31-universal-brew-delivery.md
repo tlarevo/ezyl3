@@ -73,9 +73,11 @@ flowchart TD
 7. Release automation fails if any required artifact or checksum is missing.
 8. README install guidance leads with Homebrew, with source build documented as a
    developer path.
-9. Uninstall attempts `launchctl bootout` for every planned service before
+9. Local testing documentation explains when to use direct Go commands,
+   GoReleaser snapshots, local formula installs, and the real tap.
+10. Uninstall attempts `launchctl bootout` for every planned service before
    deleting its plist, even when only one service plist exists.
-10. The first implementation must not claim Linux runtime support before Linux
+11. The first implementation must not claim Linux runtime support before Linux
     service/runtime work exists.
 
 ## Files
@@ -93,7 +95,8 @@ flowchart TD
 - `internal/core/service_test.go`: test service-level bootout behavior.
 - `internal/cli/root.go`: use planned service list when uninstalling.
 - `internal/cli/root_test.go`: cover partial service plans during uninstall.
-- `README.md`: lead with formula install and document release prerequisites.
+- `README.md`: lead with formula install and document release prerequisites plus
+  the local testing ladder.
 
 ## Implementation Plan
 
@@ -351,6 +354,26 @@ rendering step for `tlarevo/homebrew-tap`. The repository secret
 `HOMEBREW_TAP_TOKEN` must have contents write access to the tap repository.
 ```
 
+Add a local testing section that explains Brew is for packaging/release
+validation, not the normal development loop:
+
+- Heading: `## Local Testing`
+- Principle: direct Go commands are the normal development loop; Brew is only for
+  package/release validation.
+- Day-to-day commands: `go test ./...`, `go run ./cmd/ezyl3 --help`,
+  `go run ./cmd/ezyl3 version`, `go build -o /tmp/ezyl3 ./cmd/ezyl3`, and
+  `/tmp/ezyl3 version`.
+- Snapshot artifact commands: `goreleaser release --snapshot --clean
+  --skip=publish` and `find dist -type f -name ezyl3 -perm +111`.
+- Isolated smoke-test pattern: run the built binary with temporary `HOME`,
+  `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME`, and `XDG_CACHE_HOME`
+  values under `/tmp/ezyl3-smoke` so checks do not touch real profiles.
+- Local formula validation commands: `brew install --formula ./Formula/ezyl3.rb`,
+  `ezyl3 version`, and `brew uninstall ezyl3`.
+- Public release validation commands: `brew tap tlarevo/tap`,
+  `brew install tlarevo/tap/ezyl3`, `ezyl3 version`, and
+  `brew uninstall ezyl3`.
+
 Commit:
 
 ```bash
@@ -365,6 +388,7 @@ Run:
 ```bash
 go test ./...
 goreleaser check
+goreleaser release --snapshot --clean --skip=publish
 git diff --check
 git diff --stat
 ```
@@ -373,6 +397,7 @@ Expected:
 
 - tests pass;
 - GoReleaser config validates;
+- snapshot release artifacts are produced locally;
 - no deprecated `brews` warning;
 - no `homebrew_casks` release publishing;
 - diff is limited to the files in this plan.
