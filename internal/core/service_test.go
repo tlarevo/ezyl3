@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,7 +21,15 @@ func (f *fakeServiceRunner) RunLaunchctl(args ...string) (string, error) {
 	if f.err != nil {
 		return "", f.err
 	}
-	return f.out[strings.Join(args, " ")], nil
+	key := strings.Join(args, " ")
+	out, ok := f.out[key]
+	// Model real launchctl: `print` on a service that is not loaded in the
+	// domain exits non-zero. Only services with a configured status entry are
+	// treated as already loaded.
+	if !ok && len(args) > 0 && args[0] == "print" {
+		return "", fmt.Errorf("Could not find service")
+	}
+	return out, nil
 }
 
 func TestServiceStartBootstrapsLiteLLMAndSkipsUnconfiguredNgrok(t *testing.T) {
@@ -34,11 +43,43 @@ func TestServiceStartBootstrapsLiteLLMAndSkipsUnconfiguredNgrok(t *testing.T) {
 		t.Fatalf("Start returned error: %v", err)
 	}
 
-	if len(runner.calls) != 1 || runner.calls[0][0] != "bootstrap" || runner.calls[0][2] != paths.LaunchAgentPath("litellm") {
+	// Start probes status first (print) to stay idempotent, then bootstraps the
+	// not-yet-loaded litellm service.
+	bootstrap := lastCallWithVerb(runner.calls, "bootstrap")
+	if bootstrap == nil || bootstrap[2] != paths.LaunchAgentPath("litellm") {
 		t.Fatalf("launchctl calls = %#v", runner.calls)
 	}
 	if findServiceResult(results, "ngrok").State != ServiceStateNotConfigured {
 		t.Fatalf("ngrok result = %#v", findServiceResult(results, "ngrok"))
+	}
+}
+
+func TestServiceStartTreatsAlreadyLoadedServiceAsRunningAndContinues(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	writeServiceFile(t, paths.LaunchAgentPath("litellm"))
+	writeServiceFile(t, paths.LaunchAgentPath("ngrok"))
+	// litellm reports running; ngrok is not yet loaded (empty print output).
+	runner := &fakeServiceRunner{out: map[string]string{
+		"print gui/501/com.ezyl3.default.litellm": "state = running\n",
+	}}
+	manager := ServiceManager{Paths: paths, Runner: runner, UID: 501}
+
+	results, err := manager.Start()
+	if err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if findServiceResult(results, "litellm").State != ServiceStateAlreadyRunning {
+		t.Fatalf("litellm result = %#v, want already running", findServiceResult(results, "litellm"))
+	}
+	// litellm must NOT be bootstrapped again, but ngrok must be.
+	for _, call := range runner.calls {
+		if call[0] == "bootstrap" && call[2] == paths.LaunchAgentPath("litellm") {
+			t.Fatalf("litellm should not be re-bootstrapped: %#v", runner.calls)
+		}
+	}
+	bootstrap := lastCallWithVerb(runner.calls, "bootstrap")
+	if bootstrap == nil || bootstrap[2] != paths.LaunchAgentPath("ngrok") {
+		t.Fatalf("ngrok should be bootstrapped even though litellm was already running: %#v", runner.calls)
 	}
 }
 
@@ -129,6 +170,39 @@ func writeServiceFile(t *testing.T, path string) {
 	if err := os.WriteFile(path, []byte("plist"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestServiceStartTreatsLoadedButStoppedServiceAsBootstrapped(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	writeServiceFile(t, paths.LaunchAgentPath("litellm"))
+	// litellm is loaded but in a stopped state (waiting/exited): print succeeds.
+	// A re-bootstrap would fail with EIO, so it must be treated as already running.
+	runner := &fakeServiceRunner{out: map[string]string{
+		"print gui/501/com.ezyl3.default.litellm": "state = waiting\n",
+	}}
+	manager := ServiceManager{Paths: paths, Runner: runner, UID: 501}
+
+	results, err := manager.Start()
+	if err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if findServiceResult(results, "litellm").State != ServiceStateAlreadyRunning {
+		t.Fatalf("loaded-but-stopped litellm = %#v, want already running", findServiceResult(results, "litellm"))
+	}
+	for _, call := range runner.calls {
+		if call[0] == "bootstrap" && call[2] == paths.LaunchAgentPath("litellm") {
+			t.Fatalf("loaded service must not be re-bootstrapped: %#v", runner.calls)
+		}
+	}
+}
+
+func lastCallWithVerb(calls [][]string, verb string) []string {
+	for i := len(calls) - 1; i >= 0; i-- {
+		if len(calls[i]) > 0 && calls[i][0] == verb {
+			return calls[i]
+		}
+	}
+	return nil
 }
 
 func findServiceResult(results []ServiceActionResult, service string) ServiceActionResult {

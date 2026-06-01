@@ -16,7 +16,7 @@ func TestLaunchAgentPlistsUseProfileSpecificLabelsAndPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderLiteLLMPlist returned error: %v", err)
 	}
-	ngrok, err := RenderNgrokPlist(paths, "example.ngrok-free.dev", 4400)
+	ngrok, err := RenderNgrokPlist(paths, "example.ngrok-free.dev", 4400, "/opt/homebrew/bin/ngrok")
 	if err != nil {
 		t.Fatalf("RenderNgrokPlist returned error: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestLaunchAgentPlistsUseProfileSpecificLabelsAndPaths(t *testing.T) {
 		want []string
 	}{
 		{"litellm", litellm, []string{"com.ezyl3.default.litellm", "/usr/local/bin/ezyl3", "proxy", "run", "--profile", "default", "/tmp/ezyl3/state/logs/litellm.out.log"}},
-		{"ngrok", ngrok, []string{"com.ezyl3.default.ngrok", "--url=example.ngrok-free.dev", "http://localhost:4400", "/tmp/ezyl3/state/logs/ngrok.out.log"}},
+		{"ngrok", ngrok, []string{"com.ezyl3.default.ngrok", "/opt/homebrew/bin/ngrok", "--url=example.ngrok-free.dev", "http://localhost:4400", "/tmp/ezyl3/state/logs/ngrok.out.log"}},
 	} {
 		for _, want := range pair.want {
 			if !strings.Contains(pair.text, want) {

@@ -30,12 +30,13 @@ type LaunchAgentWriter interface {
 }
 
 type SetupResult struct {
-	Profile         Profile
-	Domain          string
-	BaseURL         string
-	LaunchAgentDir  string
-	PythonInstalled bool
-	Secrets         Secrets
+	Profile            Profile
+	Domain             string
+	BaseURL            string
+	LaunchAgentDir     string
+	PythonInstalled    bool
+	MasterKeyGenerated bool
+	Secrets            Secrets
 }
 
 type DefaultPythonInstaller struct{}
@@ -73,11 +74,13 @@ func RunSetup(opts SetupOptions, deps SetupDependencies) (SetupResult, error) {
 		}
 	}
 	secrets := opts.Secrets
+	masterKeyGenerated := false
 	if strings.TrimSpace(secrets.LiteLLMMasterKey) == "" {
 		secrets.LiteLLMMasterKey, err = GenerateMasterKey()
 		if err != nil {
 			return SetupResult{}, err
 		}
+		masterKeyGenerated = true
 	}
 
 	profile, err := CreateManagedProfile(opts.Paths, secrets, domain)
@@ -115,12 +118,13 @@ func RunSetup(opts SetupOptions, deps SetupDependencies) (SetupResult, error) {
 		baseURL = "https://" + domain + "/v1"
 	}
 	return SetupResult{
-		Profile:         profile,
-		Domain:          domain,
-		BaseURL:         baseURL,
-		LaunchAgentDir:  filepath.Dir(opts.Paths.LaunchAgentPath("litellm")),
-		PythonInstalled: installed,
-		Secrets:         secrets,
+		Profile:            profile,
+		Domain:             domain,
+		BaseURL:            baseURL,
+		LaunchAgentDir:     filepath.Dir(opts.Paths.LaunchAgentPath("litellm")),
+		PythonInstalled:    installed,
+		MasterKeyGenerated: masterKeyGenerated,
+		Secrets:            secrets,
 	}, nil
 }
 
@@ -133,7 +137,7 @@ func (r SetupResult) Summary() string {
 	if r.PythonInstalled {
 		python = "installed"
 	}
-	return fmt.Sprintf(`Created managed profile %s
+	summary := fmt.Sprintf(`Created managed profile %s
 Runtime: %s
 Logs: %s
 LaunchAgents: %s
@@ -145,4 +149,10 @@ LiteLLM master key: %s
 HF token: %s
 Ollama API key: %s
 `, r.Profile.Name, r.Profile.RuntimeDir, r.Profile.Paths.LogsDir, r.LaunchAgentDir, tunnel, python, r.BaseURL, presence(r.Secrets.LiteLLMMasterKey), presence(r.Secrets.HFToken), presence(r.Secrets.OllamaAPIKey))
+	if r.MasterKeyGenerated {
+		summary += "\nNOTE: A new LiteLLM master key was generated. If Cursor was already\n" +
+			"configured, update its API key with:\n" +
+			"  ezyl3 cursor settings --reveal-key\n"
+	}
+	return summary
 }

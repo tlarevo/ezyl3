@@ -185,7 +185,8 @@ func doctorCommand(opts *options) *cobra.Command {
 
 func cursorCommand(opts *options) *cobra.Command {
 	cmd := &cobra.Command{Use: "cursor", Short: "Print Cursor settings"}
-	cmd.AddCommand(&cobra.Command{
+	var reveal bool
+	settingsCmd := &cobra.Command{
 		Use:   "settings",
 		Short: "Print Cursor model settings",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -193,14 +194,16 @@ func cursorCommand(opts *options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			settings, err := core.CursorSettings(runtime)
+			settings, err := core.CursorSettings(runtime, reveal)
 			if err != nil {
 				return err
 			}
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), settings)
 			return nil
 		},
-	})
+	}
+	settingsCmd.Flags().BoolVar(&reveal, "reveal-key", false, "print the LiteLLM master key instead of redacting it")
+	cmd.AddCommand(settingsCmd)
 	return cmd
 }
 

@@ -147,7 +147,7 @@ func TestCursorSettingsFallsBackToLocalBaseURLWithoutNgrok(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	settings, err := CursorSettings(runtime)
+	settings, err := CursorSettings(runtime, false)
 	if err != nil {
 		t.Fatalf("CursorSettings returned error: %v", err)
 	}
@@ -156,6 +156,50 @@ func TestCursorSettingsFallsBackToLocalBaseURLWithoutNgrok(t *testing.T) {
 	}
 	if strings.Contains(settings, "sk-secret") {
 		t.Fatalf("settings leaked secret:\n%s", settings)
+	}
+	if !strings.Contains(settings, "WARNING") || !strings.Contains(settings, "Cursor cannot use it") {
+		t.Fatalf("local-only settings should warn that Cursor cannot use the URL:\n%s", settings)
+	}
+}
+
+func TestCursorSettingsOmitsLocalOnlyWarningWithNgrokDomain(t *testing.T) {
+	runtime := NewRuntime(t.TempDir())
+	if err := os.WriteFile(filepath.Join(runtime.Path, ".env"), []byte("LITELLM_MASTER_KEY=\"sk-secret\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteProfileFile(runtime.Path, Profile{Name: "default", Mode: ProfileModeManaged, Domain: "demo.ngrok-free.dev"}); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, err := CursorSettings(runtime, false)
+	if err != nil {
+		t.Fatalf("CursorSettings returned error: %v", err)
+	}
+	if !strings.Contains(settings, "https://demo.ngrok-free.dev/v1") {
+		t.Fatalf("settings missing tunnel base URL:\n%s", settings)
+	}
+	if strings.Contains(settings, "WARNING") {
+		t.Fatalf("tunnel profile should not show local-only warning:\n%s", settings)
+	}
+}
+
+func TestCursorSettingsRevealKeyPrintsUnquotedMasterKey(t *testing.T) {
+	runtime := NewRuntime(t.TempDir())
+	if err := os.WriteFile(filepath.Join(runtime.Path, ".env"), []byte("LITELLM_MASTER_KEY=\"sk-cursor-abc123\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, err := CursorSettings(runtime, true)
+	if err != nil {
+		t.Fatalf("CursorSettings returned error: %v", err)
+	}
+	if !strings.Contains(settings, "API key: sk-cursor-abc123\n") {
+		t.Fatalf("reveal should print the clean key:\n%s", settings)
+	}
+	// The revealed key must never carry the .env surrounding quotes, which is
+	// exactly the trap that breaks pasting into Cursor.
+	if strings.Contains(settings, "\"sk-cursor-abc123\"") {
+		t.Fatalf("revealed key must not be quoted:\n%s", settings)
 	}
 }
 

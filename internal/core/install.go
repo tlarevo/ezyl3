@@ -131,7 +131,7 @@ func WriteLaunchAgents(paths ProfilePaths, domain string, port int, executablePa
 	if domain == "" {
 		return nil
 	}
-	ngrok, err := RenderNgrokPlist(paths, domain, port)
+	ngrok, err := RenderNgrokPlist(paths, domain, port, ResolveNgrokPath())
 	if err != nil {
 		return err
 	}
