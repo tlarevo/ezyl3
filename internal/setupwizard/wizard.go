@@ -1,6 +1,7 @@
 package setupwizard
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -79,6 +80,15 @@ func (k keyMap) FullHelp() [][]key.Binding {
 }
 
 func Run(opts Options) (core.SetupResult, error) {
+	// Python dependency installation shells out to uv/pip, which stream verbose
+	// output. Inside the Bubble Tea alt-screen that output corrupts the rendered
+	// UI, so capture it into a buffer instead of letting it reach the terminal.
+	// The buffer is surfaced only if setup fails.
+	var installLog bytes.Buffer
+	if opts.Dependencies.Installer == nil {
+		opts.Dependencies.Installer = core.UVToolchain{Stdout: &installLog, Stderr: &installLog}
+	}
+
 	finalModel, err := tea.NewProgram(newModel(opts, core.RunSetup), tea.WithAltScreen()).Run()
 	if err != nil {
 		return core.SetupResult{}, err
@@ -86,6 +96,9 @@ func Run(opts Options) (core.SetupResult, error) {
 	m, ok := finalModel.(model)
 	if !ok {
 		return core.SetupResult{}, fmt.Errorf("setup wizard returned unexpected model")
+	}
+	if m.err != nil && installLog.Len() > 0 {
+		return m.result, fmt.Errorf("%w\n\n--- dependency install output ---\n%s", m.err, installLog.String())
 	}
 	return m.result, m.err
 }
