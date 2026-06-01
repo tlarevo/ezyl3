@@ -14,6 +14,25 @@ Released binaries report their tag with:
 ezyl3 version
 ```
 
+## ngrok Prerequisite (for Cursor)
+
+Cursor requires a public HTTPS base URL — it refuses to call `localhost`/private
+addresses. So to use ezyl3 with Cursor you need an ngrok tunnel, and ngrok must be
+installed and authenticated **before** you run `ezyl3 setup` with a domain:
+
+```bash
+brew install --cask ngrok
+ngrok config add-authtoken <token>   # from https://dashboard.ngrok.com/get-started/your-authtoken
+```
+
+Then claim a free static domain at https://dashboard.ngrok.com/domains and pass it
+to setup (`--domain <name>.ngrok-free.dev`). `ezyl3 setup` checks ngrok readiness
+up front and refuses a tunneled profile with clear guidance if ngrok is missing or
+unconfigured, rather than failing later at service start.
+
+A **local-only** profile (no `--domain`) does not need ngrok at all — but it cannot
+be used with Cursor. It is only useful for direct API access to the proxy.
+
 ## Build From Source
 
 Requirements:
