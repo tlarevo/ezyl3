@@ -8,12 +8,13 @@ import (
 )
 
 const (
-	ServiceStateLoaded        = "loaded"
-	ServiceStateRunning       = "running"
-	ServiceStateStopped       = "stopped"
-	ServiceStateMissing       = "missing"
-	ServiceStateNotConfigured = "not configured"
-	ServiceStateUnknown       = "unknown"
+	ServiceStateLoaded         = "loaded"
+	ServiceStateRunning        = "running"
+	ServiceStateStopped        = "stopped"
+	ServiceStateMissing        = "missing"
+	ServiceStateNotConfigured  = "not configured"
+	ServiceStateUnknown        = "unknown"
+	ServiceStateAlreadyRunning = "already running"
 )
 
 type ServiceRunner interface {
@@ -91,6 +92,18 @@ func (m ServiceManager) runServices(action string, services []string, allowMissi
 			}
 			continue
 		}
+		// Starting a service that launchd has already bootstrapped is not a
+		// failure: report it as already running and continue so one loaded
+		// service does not abort the rest (e.g. leaving ngrok unstarted).
+		if action == "start" && m.isBootstrapped(runner, service, uid) {
+			results = append(results, ServiceActionResult{
+				Service: service,
+				Action:  action,
+				State:   ServiceStateAlreadyRunning,
+				Detail:  "already bootstrapped; leaving running",
+			})
+			continue
+		}
 		args := serviceCommandArgs(action, m.Paths, service, uid)
 		out, err := runner.RunLaunchctl(args...)
 		if err != nil {
@@ -108,6 +121,22 @@ func (m ServiceManager) runServices(action string, services []string, allowMissi
 		})
 	}
 	return results, nil
+}
+
+// isBootstrapped reports whether launchd already has the service loaded, by
+// querying its state. A successful print with a non-stopped state means the
+// service is live and a bootstrap would fail with EIO (exit 5).
+func (m ServiceManager) isBootstrapped(runner ServiceRunner, service string, uid int) bool {
+	out, err := runner.RunLaunchctl(serviceCommandArgs("status", m.Paths, service, uid)...)
+	if err != nil {
+		return false
+	}
+	switch parseLaunchctlState(out) {
+	case ServiceStateRunning, ServiceStateLoaded:
+		return true
+	default:
+		return false
+	}
 }
 
 func serviceCommandArgs(action string, paths ProfilePaths, service string, uid int) []string {

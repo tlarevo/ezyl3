@@ -157,6 +157,30 @@ func TestCursorSettingsFallsBackToLocalBaseURLWithoutNgrok(t *testing.T) {
 	if strings.Contains(settings, "sk-secret") {
 		t.Fatalf("settings leaked secret:\n%s", settings)
 	}
+	if !strings.Contains(settings, "WARNING") || !strings.Contains(settings, "Cursor cannot use it") {
+		t.Fatalf("local-only settings should warn that Cursor cannot use the URL:\n%s", settings)
+	}
+}
+
+func TestCursorSettingsOmitsLocalOnlyWarningWithNgrokDomain(t *testing.T) {
+	runtime := NewRuntime(t.TempDir())
+	if err := os.WriteFile(filepath.Join(runtime.Path, ".env"), []byte("LITELLM_MASTER_KEY=\"sk-secret\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteProfileFile(runtime.Path, Profile{Name: "default", Mode: ProfileModeManaged, Domain: "demo.ngrok-free.dev"}); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, err := CursorSettings(runtime)
+	if err != nil {
+		t.Fatalf("CursorSettings returned error: %v", err)
+	}
+	if !strings.Contains(settings, "https://demo.ngrok-free.dev/v1") {
+		t.Fatalf("settings missing tunnel base URL:\n%s", settings)
+	}
+	if strings.Contains(settings, "WARNING") {
+		t.Fatalf("tunnel profile should not show local-only warning:\n%s", settings)
+	}
 }
 
 func TestDetectNgrokDomainReadsProfileJSON(t *testing.T) {

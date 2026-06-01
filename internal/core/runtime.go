@@ -80,14 +80,23 @@ func (r DoctorReport) JSON() ([]byte, error) {
 func CursorSettings(runtime Runtime) (string, error) {
 	domain, err := DetectNgrokDomain(runtime.Path)
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d/v1", runtime.Port)
+	localOnly := true
 	if err == nil {
 		baseURL = "https://" + domain + "/v1"
+		localOnly = false
 	}
 	secrets, err := ReadSecrets(filepath.Join(runtime.Path, ".env"))
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Base URL: %s\nAPI key: %s\nModels: litellm-auto, litellm-simple, litellm-medium, litellm-complex, litellm-reasoning\n", baseURL, presence(secrets.LiteLLMMasterKey)), nil
+	out := fmt.Sprintf("Base URL: %s\nAPI key: %s\nModels: litellm-auto, litellm-simple, litellm-medium, litellm-complex, litellm-reasoning\n", baseURL, presence(secrets.LiteLLMMasterKey))
+	if localOnly {
+		out += "\nWARNING: This is a local-only base URL. Cursor cannot use it: Cursor's\n" +
+			"backend rejects localhost/private addresses (it requires a public HTTPS\n" +
+			"target). Configure an ngrok tunnel with:\n" +
+			"  ezyl3 setup --force --domain <name>.ngrok-free.dev\n"
+	}
+	return out, nil
 }
 
 func DetectNgrokDomain(runtimePath string) (string, error) {
