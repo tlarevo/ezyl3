@@ -123,14 +123,12 @@ func (m ServiceManager) runServices(action string, services []string, allowMissi
 	return results, nil
 }
 
-// isBootstrapped reports whether launchd already has the service loaded, by
-// querying its state. A successful print with a non-stopped state means the
-// service is live and a bootstrap would fail with EIO (exit 5).
+// isBootstrapped reports whether launchd already has the service loaded in this
+// domain. A successful `launchctl print` (regardless of run state) means the
+// service is loaded and a re-bootstrap would fail with EIO (exit 5). A
+// loaded-but-stopped job (waiting/exited/not running) is still bootstrapped, so
+// we must not gate on the parsed run state here.
 func (m ServiceManager) isBootstrapped(runner ServiceRunner, service string, uid int) bool {
-	// A successful print means launchd already has the service loaded in this
-	// domain; a re-bootstrap would fail with EIO (exit 5) regardless of run
-	// state. A loaded-but-stopped job (waiting/exited/not running) is still
-	// bootstrapped, so we must not gate on the parsed run state here.
 	_, err := runner.RunLaunchctl(serviceCommandArgs("status", m.Paths, service, uid)...)
 	return err == nil
 }
