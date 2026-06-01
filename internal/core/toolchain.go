@@ -28,6 +28,25 @@ type UVToolchain struct {
 	GOOS   string
 	GOARCH string
 	Deps   UVToolchainDeps
+	// Stdout and Stderr receive subprocess output. They default to os.Stdout and
+	// os.Stderr for the CLI, but the interactive wizard injects a buffer so the
+	// uv/pip output does not corrupt the Bubble Tea alt-screen.
+	Stdout io.Writer
+	Stderr io.Writer
+}
+
+func (t UVToolchain) stdout() io.Writer {
+	if t.Stdout != nil {
+		return t.Stdout
+	}
+	return os.Stdout
+}
+
+func (t UVToolchain) stderr() io.Writer {
+	if t.Stderr != nil {
+		return t.Stderr
+	}
+	return os.Stderr
 }
 
 type UVToolchainDeps struct {
@@ -49,6 +68,8 @@ type commandSpec struct {
 	Path    string
 	Args    []string
 	Env     []string
+	Stdout  io.Writer
+	Stderr  io.Writer
 }
 
 func (t UVToolchain) InstallPythonDeps(paths ProfilePaths) error {
@@ -64,24 +85,32 @@ func (t UVToolchain) InstallPythonDeps(paths ProfilePaths) error {
 	}
 	env := uvManagedEnv(paths.CacheDir)
 	venv := filepath.Join(paths.ProfileDir, ".venv")
+	stdout := t.stdout()
+	stderr := t.stderr()
 	commands := []commandSpec{
 		{
-			Dir:  paths.ProfileDir,
-			Path: uv,
-			Args: []string{"--no-config", "python", "install", ManagedPythonVersion, "--managed-python"},
-			Env:  env,
+			Dir:    paths.ProfileDir,
+			Path:   uv,
+			Args:   []string{"--no-config", "python", "install", ManagedPythonVersion, "--managed-python"},
+			Env:    env,
+			Stdout: stdout,
+			Stderr: stderr,
 		},
 		{
-			Dir:  paths.ProfileDir,
-			Path: uv,
-			Args: []string{"--no-config", "venv", "--python", ManagedPythonVersion, "--managed-python", venv},
-			Env:  env,
+			Dir:    paths.ProfileDir,
+			Path:   uv,
+			Args:   []string{"--no-config", "venv", "--python", ManagedPythonVersion, "--managed-python", venv},
+			Env:    env,
+			Stdout: stdout,
+			Stderr: stderr,
 		},
 		{
-			Dir:  paths.ProfileDir,
-			Path: uv,
-			Args: []string{"--no-config", "pip", "install", "--python", filepath.Join(venv, "bin", "python"), "litellm[proxy]"},
-			Env:  env,
+			Dir:    paths.ProfileDir,
+			Path:   uv,
+			Args:   []string{"--no-config", "pip", "install", "--python", filepath.Join(venv, "bin", "python"), "litellm[proxy]"},
+			Env:    env,
+			Stdout: stdout,
+			Stderr: stderr,
 		},
 	}
 	run := t.Deps.Run
@@ -129,7 +158,7 @@ func (t UVToolchain) ensureUV(cacheDir string) (string, error) {
 	if download == nil {
 		download = downloadBytes
 	}
-	fmt.Fprintf(os.Stderr, "Downloading uv %s to %s\n", UVBootstrapVersion, filepath.Dir(uvPath))
+	fmt.Fprintf(t.stderr(), "Downloading uv %s to %s\n", UVBootstrapVersion, filepath.Dir(uvPath))
 	archive, err := download(artifact.URL)
 	if err != nil {
 		return "", fmt.Errorf("download uv %s: %w", UVBootstrapVersion, err)
@@ -249,8 +278,14 @@ func runToolchainCommand(spec commandSpec) error {
 	cmd := exec.CommandContext(ctx, spec.Path, spec.Args...)
 	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), spec.Env...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = spec.Stdout
+	cmd.Stderr = spec.Stderr
+	if cmd.Stdout == nil {
+		cmd.Stdout = os.Stdout
+	}
+	if cmd.Stderr == nil {
+		cmd.Stderr = os.Stderr
+	}
 	if err := cmd.Run(); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("run %s: %w", spec.Path, ctxErr)

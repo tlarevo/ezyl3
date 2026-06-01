@@ -81,7 +81,10 @@ func TestVerifySHA256RejectsMismatch(t *testing.T) {
 func TestUVToolchainUsesPathUVAndBuildsManagedCommands(t *testing.T) {
 	paths := setupTestPaths(t, "default")
 	runner := &recordingCommandRunner{}
+	var out, errBuf bytes.Buffer
 	toolchain := UVToolchain{
+		Stdout: &out,
+		Stderr: &errBuf,
 		Deps: UVToolchainDeps{
 			LookPath: func(name string) (string, error) {
 				if name != "uv" {
@@ -101,26 +104,59 @@ func TestUVToolchainUsesPathUVAndBuildsManagedCommands(t *testing.T) {
 	python := filepath.Join(venv, "bin", "python")
 	want := []commandSpec{
 		{
-			Dir:  paths.ProfileDir,
-			Path: "/usr/local/bin/uv",
-			Args: []string{"--no-config", "python", "install", ManagedPythonVersion, "--managed-python"},
-			Env:  uvManagedEnv(paths.CacheDir),
+			Dir:    paths.ProfileDir,
+			Path:   "/usr/local/bin/uv",
+			Args:   []string{"--no-config", "python", "install", ManagedPythonVersion, "--managed-python"},
+			Env:    uvManagedEnv(paths.CacheDir),
+			Stdout: &out,
+			Stderr: &errBuf,
 		},
 		{
-			Dir:  paths.ProfileDir,
-			Path: "/usr/local/bin/uv",
-			Args: []string{"--no-config", "venv", "--python", ManagedPythonVersion, "--managed-python", venv},
-			Env:  uvManagedEnv(paths.CacheDir),
+			Dir:    paths.ProfileDir,
+			Path:   "/usr/local/bin/uv",
+			Args:   []string{"--no-config", "venv", "--python", ManagedPythonVersion, "--managed-python", venv},
+			Env:    uvManagedEnv(paths.CacheDir),
+			Stdout: &out,
+			Stderr: &errBuf,
 		},
 		{
-			Dir:  paths.ProfileDir,
-			Path: "/usr/local/bin/uv",
-			Args: []string{"--no-config", "pip", "install", "--python", python, "litellm[proxy]"},
-			Env:  uvManagedEnv(paths.CacheDir),
+			Dir:    paths.ProfileDir,
+			Path:   "/usr/local/bin/uv",
+			Args:   []string{"--no-config", "pip", "install", "--python", python, "litellm[proxy]"},
+			Env:    uvManagedEnv(paths.CacheDir),
+			Stdout: &out,
+			Stderr: &errBuf,
 		},
 	}
 	if !reflect.DeepEqual(runner.commands, want) {
 		t.Fatalf("commands = %#v, want %#v", runner.commands, want)
+	}
+}
+
+func TestUVToolchainDefaultsCommandWritersToInjectedSinks(t *testing.T) {
+	// When writers are injected (as the wizard does to avoid corrupting the
+	// alt-screen), every command spec must carry them rather than os.Stdout.
+	paths := setupTestPaths(t, "default")
+	runner := &recordingCommandRunner{}
+	var sink bytes.Buffer
+	toolchain := UVToolchain{
+		Stdout: &sink,
+		Stderr: &sink,
+		Deps: UVToolchainDeps{
+			LookPath: func(string) (string, error) { return "/usr/local/bin/uv", nil },
+			Run:      runner.Run,
+		},
+	}
+	if err := toolchain.InstallPythonDeps(paths); err != nil {
+		t.Fatalf("InstallPythonDeps returned error: %v", err)
+	}
+	if len(runner.commands) == 0 {
+		t.Fatal("no commands recorded")
+	}
+	for i, c := range runner.commands {
+		if c.Stdout != &sink || c.Stderr != &sink {
+			t.Fatalf("command %d writers = (%v,%v), want injected sink", i, c.Stdout, c.Stderr)
+		}
 	}
 }
 
