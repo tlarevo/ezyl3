@@ -72,6 +72,21 @@ func TestCursorSettingsPrintsURLAndRedactsKey(t *testing.T) {
 	}
 }
 
+func TestCursorSettingsRevealKeyPrintsCleanKey(t *testing.T) {
+	runtime := writeRuntimeFixture(t)
+
+	out, err := execute("cursor", "settings", "--reveal-key", "--path", runtime)
+	if err != nil {
+		t.Fatalf("cursor settings --reveal-key returned error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "API key: sk-cursor-secret\n") {
+		t.Fatalf("reveal-key should print the clean master key:\n%s", out)
+	}
+	if strings.Contains(out, "\"sk-cursor-secret\"") {
+		t.Fatalf("revealed key must not include surrounding quotes:\n%s", out)
+	}
+}
+
 func TestModelsSetUpdatesOnlySelectedTier(t *testing.T) {
 	runtime := writeRuntimeFixture(t)
 

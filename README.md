@@ -200,7 +200,28 @@ Print the settings Cursor needs:
 ./ezyl3 cursor settings
 ```
 
-Use the printed base URL and model names in Cursor. The API key line only reports whether the LiteLLM master key is set; it does not print the key.
+Use the printed base URL and model names in Cursor. By default the API key line
+only reports whether the LiteLLM master key is set; it does not print the key.
+
+To get the actual key for Cursor's "OpenAI API Key" field, reveal it explicitly:
+
+```bash
+./ezyl3 cursor settings --reveal-key
+```
+
+This prints the master key as a clean, unquoted value ready to paste. Do not copy
+it out of `.env` by hand: that file stores the key wrapped in double quotes, and
+pasting the quotes into Cursor makes LiteLLM reject the key with a misleading
+`No connected db.` error.
+
+Cursor requires a public HTTPS base URL. A local-only profile (no ngrok domain)
+prints a `http://127.0.0.1:...` URL that Cursor's backend refuses to call
+("Access to private networks is forbidden"); `cursor settings` warns when this is
+the case. Re-run setup with a domain to get a usable tunnel URL.
+
+> Re-running `ezyl3 setup --force` without `--master-key` generates a new master
+> key, which invalidates the one Cursor is using. Setup prints a notice when this
+> happens; reveal the new key and update Cursor.
 
 Common model names:
 

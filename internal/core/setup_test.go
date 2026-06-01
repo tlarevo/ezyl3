@@ -110,6 +110,31 @@ func TestRunSetupCreatesLocalOnlyProfileAndRedactsSecrets(t *testing.T) {
 			t.Fatalf("summary missing %q:\n%s", want, summary)
 		}
 	}
+	if !result.MasterKeyGenerated {
+		t.Fatalf("expected MasterKeyGenerated to be true when no key supplied")
+	}
+	if !strings.Contains(summary, "new LiteLLM master key was generated") || !strings.Contains(summary, "--reveal-key") {
+		t.Fatalf("summary should warn about regenerated key and point to reveal:\n%s", summary)
+	}
+}
+
+func TestRunSetupKeepsSuppliedMasterKeyAndOmitsRegenWarning(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	result, err := RunSetup(SetupOptions{
+		Paths:          paths,
+		ExecutablePath: "/usr/local/bin/ezyl3",
+		Secrets:        Secrets{LiteLLMMasterKey: "sk-cursor-supplied"},
+		SkipPythonDeps: true,
+	}, SetupDependencies{Installer: &fakeInstaller{}, LaunchAgentWriter: &fakeLaunchAgentWriter{}})
+	if err != nil {
+		t.Fatalf("RunSetup returned error: %v", err)
+	}
+	if result.MasterKeyGenerated {
+		t.Fatalf("MasterKeyGenerated should be false when a key is supplied")
+	}
+	if strings.Contains(result.Summary(), "new LiteLLM master key was generated") {
+		t.Fatalf("summary should not warn when key was supplied:\n%s", result.Summary())
+	}
 }
 
 func TestRunSetupRefusesOverwriteWithoutForce(t *testing.T) {
