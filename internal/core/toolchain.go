@@ -158,7 +158,7 @@ func (t UVToolchain) ensureUV(cacheDir string) (string, error) {
 	if download == nil {
 		download = downloadBytes
 	}
-	fmt.Fprintf(t.stderr(), "Downloading uv %s to %s\n", UVBootstrapVersion, filepath.Dir(uvPath))
+	_, _ = fmt.Fprintf(t.stderr(), "Downloading uv %s to %s\n", UVBootstrapVersion, filepath.Dir(uvPath))
 	archive, err := download(artifact.URL)
 	if err != nil {
 		return "", fmt.Errorf("download uv %s: %w", UVBootstrapVersion, err)
