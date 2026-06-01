@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,7 +21,15 @@ func (f *fakeServiceRunner) RunLaunchctl(args ...string) (string, error) {
 	if f.err != nil {
 		return "", f.err
 	}
-	return f.out[strings.Join(args, " ")], nil
+	key := strings.Join(args, " ")
+	out, ok := f.out[key]
+	// Model real launchctl: `print` on a service that is not loaded in the
+	// domain exits non-zero. Only services with a configured status entry are
+	// treated as already loaded.
+	if !ok && len(args) > 0 && args[0] == "print" {
+		return "", fmt.Errorf("Could not find service")
+	}
+	return out, nil
 }
 
 func TestServiceStartBootstrapsLiteLLMAndSkipsUnconfiguredNgrok(t *testing.T) {
@@ -160,6 +169,30 @@ func writeServiceFile(t *testing.T, path string) {
 	}
 	if err := os.WriteFile(path, []byte("plist"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestServiceStartTreatsLoadedButStoppedServiceAsBootstrapped(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	writeServiceFile(t, paths.LaunchAgentPath("litellm"))
+	// litellm is loaded but in a stopped state (waiting/exited): print succeeds.
+	// A re-bootstrap would fail with EIO, so it must be treated as already running.
+	runner := &fakeServiceRunner{out: map[string]string{
+		"print gui/501/com.ezyl3.default.litellm": "state = waiting\n",
+	}}
+	manager := ServiceManager{Paths: paths, Runner: runner, UID: 501}
+
+	results, err := manager.Start()
+	if err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if findServiceResult(results, "litellm").State != ServiceStateAlreadyRunning {
+		t.Fatalf("loaded-but-stopped litellm = %#v, want already running", findServiceResult(results, "litellm"))
+	}
+	for _, call := range runner.calls {
+		if call[0] == "bootstrap" && call[2] == paths.LaunchAgentPath("litellm") {
+			t.Fatalf("loaded service must not be re-bootstrapped: %#v", runner.calls)
+		}
 	}
 }
 
