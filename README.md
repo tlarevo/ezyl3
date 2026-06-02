@@ -59,6 +59,13 @@ Run tests:
 go test ./...
 ```
 
+## Contributing / Working on ezyl3
+
+See [`AGENTS.md`](AGENTS.md) for how work flows through this project: the
+PRD → plan → PR pipeline, the worktree branch flow, the verification gate to run
+before every commit, and project conventions. It applies to coding agents and
+humans alike. Plans live in `docs/plans/`, PRDs in `docs/prd/`.
+
 ## Releasing
 
 Tagged releases use GoReleaser for GitHub artifacts and a separate formula

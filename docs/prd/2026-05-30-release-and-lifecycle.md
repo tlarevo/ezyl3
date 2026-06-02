@@ -149,7 +149,7 @@ flowchart TD
   an optional render-time choice driven by the existing `Secrets.HFBillTo`, restore
   the fallback hops, and add `litellm-auto` to `RequiredModelNames` so the managed
   config matches the README, setup summary, and Cursor settings output. Detailed
-  steps live in `docs/superpowers/plans/2026-05-30-uninstall-and-models.md`.
+  steps live in `docs/plans/2026-05-30-uninstall-and-models.md`.
 - Add an MIT `LICENSE` unless the maintainer specifies a different license during
   implementation.
 - Update the README to lead with `brew install`, keep build-from-source as the
@@ -190,7 +190,7 @@ flowchart TD
 
 ## Further Notes
 
-- The two plans under `docs/superpowers/plans/` (setup wizard, proxy control) are
+- The two plans under `docs/plans/` (setup wizard, proxy control) are
   already merged per git history and are historical, not backlog.
 - This phase deliberately chooses the cheapest path to real adoption: unsigned
   Homebrew first. Notarization can be added later as a self-contained follow-up the
