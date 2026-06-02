@@ -14,7 +14,7 @@ engineering-grade and decisive, not product-marketing prose.
 Every non-trivial change flows through the same path. Do not skip stages for
 substantial work; small fixes may start at the branch stage.
 
-```
+```text
 PRD            docs/prd/YYYY-MM-DD-<slug>.md      ← the spec: problem + decisions
   ↓  (one PRD → one or more plans)
 Plan           docs/plans/YYYY-MM-DD-<slug>.md    ← checkbox task breakdown
@@ -53,7 +53,7 @@ Branch naming: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`.
 Commit messages: imperative subject, a body explaining *why* when non-obvious,
 and end with:
 
-```
+```text
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 ```
 
