@@ -13,7 +13,7 @@ const (
 )
 
 func TestParseChecksumsFindsRequiredArchives(t *testing.T) {
-	got, err := parseChecksums(amd64Sum + "  " + amd64Archive + "\n" + arm64Sum + "  " + arm64Archive + "\n")
+	got, err := parseChecksums([]byte(amd64Sum + "  " + amd64Archive + "\n" + arm64Sum + "  " + arm64Archive + "\n"))
 	if err != nil {
 		t.Fatalf("parseChecksums returned error: %v", err)
 	}
@@ -26,14 +26,14 @@ func TestParseChecksumsFindsRequiredArchives(t *testing.T) {
 }
 
 func TestParseChecksumsRejectsDuplicateArchive(t *testing.T) {
-	_, err := parseChecksums(amd64Sum + "  " + amd64Archive + "\n" + arm64Sum + "  " + amd64Archive + "\n")
+	_, err := parseChecksums([]byte(amd64Sum + "  " + amd64Archive + "\n" + arm64Sum + "  " + amd64Archive + "\n"))
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Fatalf("expected duplicate archive error, got %v", err)
 	}
 }
 
 func TestParseChecksumsRejectsMalformedLine(t *testing.T) {
-	_, err := parseChecksums("not-a-checksum-line\n")
+	_, err := parseChecksums([]byte("not-a-checksum-line\n"))
 	if err == nil || !strings.Contains(err.Error(), "malformed") {
 		t.Fatalf("expected malformed line error, got %v", err)
 	}

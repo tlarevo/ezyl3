@@ -22,24 +22,25 @@ type formulaData struct {
 	ARM64SHA256 string
 }
 
-func parseChecksums(input string) (map[string]string, error) {
+func parseChecksums(input []byte) (map[string]string, error) {
 	checksums := map[string]string{}
-	scanner := bufio.NewScanner(strings.NewReader(input))
+	scanner := bufio.NewScanner(bytes.NewReader(input))
 	lineNumber := 0
 	for scanner.Scan() {
 		lineNumber++
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
 			continue
 		}
-		fields := strings.Fields(line)
+		fields := bytes.Fields(line)
 		if len(fields) != 2 {
 			return nil, fmt.Errorf("malformed checksum line %d: %s", lineNumber, line)
 		}
-		if _, exists := checksums[fields[1]]; exists {
-			return nil, fmt.Errorf("duplicate checksum entry for %s", fields[1])
+		name := string(fields[1])
+		if _, exists := checksums[name]; exists {
+			return nil, fmt.Errorf("duplicate checksum entry for %s", name)
 		}
-		checksums[fields[1]] = fields[0]
+		checksums[name] = string(fields[0])
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
@@ -110,7 +111,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	checksums, err := parseChecksums(string(checksumBytes))
+	checksums, err := parseChecksums(checksumBytes)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
