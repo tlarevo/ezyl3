@@ -38,17 +38,29 @@ Merge + cleanup
 
 ## Branch / commit / PR flow (worktree)
 
-Use the `worktree` skill for branch and PR management. The canonical loop:
+Each branch lives in its own git worktree, created with `lazyworktree`. New
+worktrees for this repo land under `~/Documents/ezyl3.worktrees/` (set via
+`git config --local lw.worktree-dir`). The canonical loop:
 
-1. **Branch off the latest `main`**: `git fetch origin && git checkout -b <type>/<slug> origin/main`.
-   Never branch off another feature branch unless you intend to stack.
-2. **Implement** in small commits.
+1. **Create a worktree off the latest `main`**:
+   `git -C <main> fetch origin && lazyworktree create <type>-<slug> --from-branch origin/main --json`.
+   `lazyworktree list --json --no-agent` shows all in-flight work at a glance.
+2. **Implement** in small commits in that worktree.
 3. **Run the verification gate** (below) — *before every commit*.
-4. **Push** and open a PR against `main`.
+4. **Push** and open a PR against `main` (`gh pr create`).
 5. **Address review comments**, push fixes, reply on each thread, resolve it.
-6. **After merge, clean up** the branch/worktree.
+6. **After merge, clean up**: `lazyworktree delete <name>`.
 
-Branch naming: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`.
+Branch naming: `feat-<slug>`, `fix-<slug>`, `chore-<slug>`, `docs-<slug>`. Use a
+dash after the type, not a slash — `lazyworktree` derives the branch from the
+worktree name and sanitizes `/` to `-`, so a slash-prefixed name will not survive
+round-trip. Keep the convention dash-based so the two tools agree.
+
+**Agent exception:** a Claude Code session is pinned to the harness worktree it
+was spawned in (`.claude/worktrees/<name>`). An agent finishes the in-flight
+feature in that pinned worktree using a plain `git checkout -b feat-<slug>`, then
+uses `lazyworktree` for subsequent work. Do not try to relocate a running agent
+into a separate worktree mid-feature.
 
 Commit messages: imperative subject, a body explaining *why* when non-obvious,
 and end with:
