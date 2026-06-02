@@ -92,7 +92,24 @@ func (r DoctorReport) JSON() ([]byte, error) {
 	return json.MarshalIndent(r, "", "  ")
 }
 
-func CursorSettings(runtime Runtime, reveal bool) (string, error) {
+// CursorModelNames are the model names a user selects in Cursor, in display
+// order. litellm-auto is the complexity router; the rest pin a tier.
+var CursorModelNames = []string{
+	"litellm-auto", "litellm-simple", "litellm-medium", "litellm-complex", "litellm-reasoning",
+}
+
+// CursorInfo is the structured source of truth for what a user needs to connect
+// Cursor. MasterKey is the clean, unquoted key; callers decide whether to redact.
+type CursorInfo struct {
+	BaseURL   string
+	MasterKey string
+	LocalOnly bool
+	Models    []string
+}
+
+// CursorSettingsInfo resolves the Cursor connection details for a runtime. It is
+// the single source consumed by both the CLI (CursorSettings) and the TUI.
+func CursorSettingsInfo(runtime Runtime) (CursorInfo, error) {
 	domain, err := DetectNgrokDomain(runtime.Path)
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d/v1", runtime.Port)
 	localOnly := true
@@ -102,14 +119,27 @@ func CursorSettings(runtime Runtime, reveal bool) (string, error) {
 	}
 	secrets, err := ReadSecrets(filepath.Join(runtime.Path, ".env"))
 	if err != nil {
+		return CursorInfo{}, err
+	}
+	return CursorInfo{
+		BaseURL:   baseURL,
+		MasterKey: strings.TrimSpace(secrets.LiteLLMMasterKey),
+		LocalOnly: localOnly,
+		Models:    CursorModelNames,
+	}, nil
+}
+
+func CursorSettings(runtime Runtime, reveal bool) (string, error) {
+	info, err := CursorSettingsInfo(runtime)
+	if err != nil {
 		return "", err
 	}
-	apiKey := presence(secrets.LiteLLMMasterKey)
+	apiKey := presence(info.MasterKey)
 	if reveal {
-		apiKey = strings.TrimSpace(secrets.LiteLLMMasterKey)
+		apiKey = info.MasterKey
 	}
-	out := fmt.Sprintf("Base URL: %s\nAPI key: %s\nModels: litellm-auto, litellm-simple, litellm-medium, litellm-complex, litellm-reasoning\n", baseURL, apiKey)
-	if localOnly {
+	out := fmt.Sprintf("Base URL: %s\nAPI key: %s\nModels: %s\n", info.BaseURL, apiKey, strings.Join(info.Models, ", "))
+	if info.LocalOnly {
 		out += "\nWARNING: This is a local-only base URL. Cursor cannot use it: Cursor's\n" +
 			"backend rejects localhost/private addresses (it requires a public HTTPS\n" +
 			"target). Configure an ngrok tunnel with:\n" +

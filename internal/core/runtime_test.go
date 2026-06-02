@@ -203,6 +203,53 @@ func TestCursorSettingsRevealKeyPrintsUnquotedMasterKey(t *testing.T) {
 	}
 }
 
+func TestCursorSettingsInfoTunneledProfile(t *testing.T) {
+	runtime := NewRuntime(t.TempDir())
+	if err := os.WriteFile(filepath.Join(runtime.Path, ".env"), []byte("LITELLM_MASTER_KEY=\"sk-cursor-abc123\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteProfileFile(runtime.Path, Profile{Name: "default", Mode: ProfileModeManaged, Domain: "demo.ngrok-free.dev"}); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := CursorSettingsInfo(runtime)
+	if err != nil {
+		t.Fatalf("CursorSettingsInfo returned error: %v", err)
+	}
+	if info.BaseURL != "https://demo.ngrok-free.dev/v1" {
+		t.Fatalf("BaseURL = %q", info.BaseURL)
+	}
+	if info.LocalOnly {
+		t.Fatalf("LocalOnly = true, want false for a tunneled profile")
+	}
+	if info.MasterKey != "sk-cursor-abc123" {
+		t.Fatalf("MasterKey = %q, want clean unquoted key", info.MasterKey)
+	}
+	for _, want := range []string{"litellm-auto", "litellm-simple", "litellm-medium", "litellm-complex", "litellm-reasoning"} {
+		if !containsString(info.Models, want) {
+			t.Fatalf("Models %v missing %q", info.Models, want)
+		}
+	}
+}
+
+func TestCursorSettingsInfoLocalOnlyProfile(t *testing.T) {
+	runtime := NewRuntime(t.TempDir())
+	if err := os.WriteFile(filepath.Join(runtime.Path, ".env"), []byte("LITELLM_MASTER_KEY=\"sk-secret\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := CursorSettingsInfo(runtime)
+	if err != nil {
+		t.Fatalf("CursorSettingsInfo returned error: %v", err)
+	}
+	if info.BaseURL != "http://127.0.0.1:4400/v1" {
+		t.Fatalf("BaseURL = %q, want local", info.BaseURL)
+	}
+	if !info.LocalOnly {
+		t.Fatalf("LocalOnly = false, want true for a profile with no tunnel")
+	}
+}
+
 func TestDetectNgrokDomainReadsProfileJSON(t *testing.T) {
 	runtime := t.TempDir()
 	profile := Profile{
