@@ -387,7 +387,7 @@ func cursorModelWithNgrok(t *testing.T, runtime core.Runtime, ngrok func() error
 
 func TestTUICursorTabShowsNgrokReadyBadge(t *testing.T) {
 	m := cursorModelWithNgrok(t, writeCursorFixture(t, "demo.ngrok-free.dev"), func() error { return nil })
-	if !strings.Contains(m.View(), "ngrok") {
+	if !strings.Contains(m.View(), "ngrok ready") {
 		t.Fatalf("expected ngrok readiness on tunneled cursor tab:\n%s", m.View())
 	}
 }
@@ -397,6 +397,23 @@ func TestTUICursorTabShowsNgrokError(t *testing.T) {
 		func() error { return errors.New("ngrok binary not found on PATH") })
 	if !strings.Contains(m.View(), "ngrok binary not found") {
 		t.Fatalf("expected ngrok error on cursor tab:\n%s", m.View())
+	}
+}
+
+func TestTUICursorNgrokCheckedOncePerRefreshNotPerRender(t *testing.T) {
+	calls := 0
+	m := cursorModelWithNgrok(t, writeCursorFixture(t, "demo.ngrok-free.dev"),
+		func() error { calls++; return nil })
+	// newModelWithDeps already ran refresh() once.
+	if calls != 1 {
+		t.Fatalf("expected one ngrok check at refresh, got %d", calls)
+	}
+	// renderCursor runs from View() on every keypress; it must not re-probe ngrok.
+	for i := 0; i < 20; i++ {
+		_ = m.View()
+	}
+	if calls != 1 {
+		t.Fatalf("ngrok probed during render: %d calls, want 1", calls)
 	}
 }
 

@@ -129,6 +129,10 @@ type model struct {
 	usageSummary   core.UsageSummary
 	usageErr       error
 	logPreview     string
+	cursorInfo     core.CursorInfo
+	cursorErr      error
+	ngrokChecked   bool
+	ngrokErr       error
 	message        string
 	activeTab      int
 	reveal         bool
@@ -245,6 +249,17 @@ func (m *model) refresh() {
 	m.models, m.modelErr = loadModels(m.runtime)
 	m.usageSummary, m.usageErr = m.deps.usage(m.runtime)
 	m.logPreview = loadLogPreview(m.runtime)
+
+	// Resolve Cursor settings and ngrok readiness once per refresh (not per
+	// render): renderCursor runs from View() on every keypress, and the ngrok
+	// check shells out to `ngrok config check`, which would stall the UI.
+	m.cursorInfo, m.cursorErr = core.CursorSettingsInfo(m.runtime)
+	m.ngrokChecked = false
+	m.ngrokErr = nil
+	if m.cursorErr == nil && !m.cursorInfo.LocalOnly && m.deps.ngrok != nil {
+		m.ngrokChecked = true
+		m.ngrokErr = m.deps.ngrok()
+	}
 }
 
 func (m model) renderSidebar() string {
@@ -281,10 +296,10 @@ func (m model) renderOverview() string {
 }
 
 func (m model) renderCursor() string {
-	info, err := core.CursorSettingsInfo(m.runtime)
-	if err != nil {
-		return section("Cursor", "Cursor settings unavailable: "+err.Error()+"\nRun ezyl3 setup first.")
+	if m.cursorErr != nil {
+		return section("Cursor", "Cursor settings unavailable: "+m.cursorErr.Error()+"\nRun ezyl3 setup first.")
 	}
+	info := m.cursorInfo
 
 	apiKey := "set"
 	if strings.TrimSpace(info.MasterKey) == "" {
@@ -302,10 +317,10 @@ func (m model) renderCursor() string {
 			"Cursor's backend rejects localhost/private addresses (it needs a\n"+
 			"public HTTPS target). Add a tunnel with:\n"+
 			"  ezyl3 setup --force --domain <name>.ngrok-free.dev"))
-	} else if m.deps.ngrok != nil {
-		// Tunneled profiles depend on ngrok; surface its readiness.
-		if err := m.deps.ngrok(); err != nil {
-			detail := err.Error()
+	} else if m.ngrokChecked {
+		// Readiness was resolved in refresh(); render from the cached result.
+		if m.ngrokErr != nil {
+			detail := m.ngrokErr.Error()
 			if i := strings.IndexByte(detail, '\n'); i >= 0 {
 				detail = detail[:i]
 			}
