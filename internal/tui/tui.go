@@ -51,6 +51,7 @@ type dependencies struct {
 	doctor   func(core.Runtime) core.DoctorReport
 	services serviceController
 	usage    func(core.Runtime) (core.UsageSummary, error)
+	ngrok    func() error
 }
 
 type keyMap struct {
@@ -154,6 +155,9 @@ func newModelWithDeps(runtime core.Runtime, deps dependencies) model {
 	}
 	if deps.usage == nil {
 		deps.usage = todayUsage
+	}
+	if deps.ngrok == nil {
+		deps.ngrok = core.DefaultNgrokChecker{}.CheckNgrokReady
 	}
 	helpView := help.New()
 	helpView.Width = 82
@@ -298,6 +302,17 @@ func (m model) renderCursor() string {
 			"Cursor's backend rejects localhost/private addresses (it needs a\n"+
 			"public HTTPS target). Add a tunnel with:\n"+
 			"  ezyl3 setup --force --domain <name>.ngrok-free.dev"))
+	} else if m.deps.ngrok != nil {
+		// Tunneled profiles depend on ngrok; surface its readiness.
+		if err := m.deps.ngrok(); err != nil {
+			detail := err.Error()
+			if i := strings.IndexByte(detail, '\n'); i >= 0 {
+				detail = detail[:i]
+			}
+			out += section("ngrok", missingStyle.Render("not ready: "+detail))
+		} else {
+			out += section("ngrok", okStyle.Render("ngrok ready"))
+		}
 	}
 
 	hint := "press c to reveal the API key"

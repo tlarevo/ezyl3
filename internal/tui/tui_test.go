@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -370,6 +371,40 @@ func TestTUICursorTabShowsBaseURLAndModelsRedactedByDefault(t *testing.T) {
 	}
 	if strings.Contains(view, "sk-cursor-abc123") {
 		t.Fatalf("cursor tab leaked the key while redacted:\n%s", view)
+	}
+}
+
+func cursorModelWithNgrok(t *testing.T, runtime core.Runtime, ngrok func() error) model {
+	t.Helper()
+	m := newModelWithDeps(runtime, dependencies{
+		doctor:   func(core.Runtime) core.DoctorReport { return core.DoctorReport{} },
+		services: &fakeServices{},
+		ngrok:    ngrok,
+	})
+	m.activeTab = cursorTab
+	return m
+}
+
+func TestTUICursorTabShowsNgrokReadyBadge(t *testing.T) {
+	m := cursorModelWithNgrok(t, writeCursorFixture(t, "demo.ngrok-free.dev"), func() error { return nil })
+	if !strings.Contains(m.View(), "ngrok") {
+		t.Fatalf("expected ngrok readiness on tunneled cursor tab:\n%s", m.View())
+	}
+}
+
+func TestTUICursorTabShowsNgrokError(t *testing.T) {
+	m := cursorModelWithNgrok(t, writeCursorFixture(t, "demo.ngrok-free.dev"),
+		func() error { return errors.New("ngrok binary not found on PATH") })
+	if !strings.Contains(m.View(), "ngrok binary not found") {
+		t.Fatalf("expected ngrok error on cursor tab:\n%s", m.View())
+	}
+}
+
+func TestTUICursorTabOmitsNgrokForLocalOnly(t *testing.T) {
+	m := cursorModelWithNgrok(t, writeCursorFixture(t, ""),
+		func() error { return errors.New("should not be called") })
+	if strings.Contains(m.View(), "ngrok ready") {
+		t.Fatalf("local-only cursor tab should not show an ngrok badge:\n%s", m.View())
 	}
 }
 
