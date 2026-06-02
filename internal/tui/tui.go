@@ -18,6 +18,7 @@ import (
 
 const (
 	overviewTab = iota
+	cursorTab
 	profileTab
 	servicesTab
 	modelsTab
@@ -25,7 +26,7 @@ const (
 	logsTab
 )
 
-var tabs = []string{"Overview", "Profile", "Services", "Models", "Doctor", "Logs"}
+var tabs = []string{"Overview", "Cursor", "Profile", "Services", "Models", "Doctor", "Logs"}
 
 var (
 	appStyle       = lipgloss.NewStyle().Padding(1, 2)
@@ -50,6 +51,7 @@ type dependencies struct {
 	doctor   func(core.Runtime) core.DoctorReport
 	services serviceController
 	usage    func(core.Runtime) (core.UsageSummary, error)
+	ngrok    func() error
 }
 
 type keyMap struct {
@@ -60,6 +62,7 @@ type keyMap struct {
 	start    keypkg.Binding
 	stop     keypkg.Binding
 	restart  keypkg.Binding
+	reveal   keypkg.Binding
 }
 
 func newKeyMap(activeTab int) keyMap {
@@ -92,22 +95,27 @@ func newKeyMap(activeTab int) keyMap {
 			keypkg.WithKeys("k"),
 			keypkg.WithHelp("k", "restart"),
 		),
+		reveal: keypkg.NewBinding(
+			keypkg.WithKeys("c"),
+			keypkg.WithHelp("c", "reveal key"),
+		),
 	}
 	servicesActive := activeTab == servicesTab
 	keys.start.SetEnabled(servicesActive)
 	keys.stop.SetEnabled(servicesActive)
 	keys.restart.SetEnabled(servicesActive)
+	keys.reveal.SetEnabled(activeTab == cursorTab)
 	return keys
 }
 
 func (k keyMap) ShortHelp() []keypkg.Binding {
-	return []keypkg.Binding{k.next, k.refresh, k.quit, k.start, k.stop, k.restart}
+	return []keypkg.Binding{k.next, k.refresh, k.quit, k.start, k.stop, k.restart, k.reveal}
 }
 
 func (k keyMap) FullHelp() [][]keypkg.Binding {
 	return [][]keypkg.Binding{
 		{k.next, k.previous, k.refresh, k.quit},
-		{k.start, k.stop, k.restart},
+		{k.start, k.stop, k.restart, k.reveal},
 	}
 }
 
@@ -121,8 +129,13 @@ type model struct {
 	usageSummary   core.UsageSummary
 	usageErr       error
 	logPreview     string
+	cursorInfo     core.CursorInfo
+	cursorErr      error
+	ngrokChecked   bool
+	ngrokErr       error
 	message        string
 	activeTab      int
+	reveal         bool
 	setupBar       progress.Model
 	help           help.Model
 	deps           dependencies
@@ -146,6 +159,9 @@ func newModelWithDeps(runtime core.Runtime, deps dependencies) model {
 	}
 	if deps.usage == nil {
 		deps.usage = todayUsage
+	}
+	if deps.ngrok == nil {
+		deps.ngrok = core.DefaultNgrokChecker{}.CheckNgrokReady
 	}
 	helpView := help.New()
 	helpView.Width = 82
@@ -188,6 +204,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runServiceActionAndRefresh(m.deps.services.Stop)
 		case keypkg.Matches(msg, keys.restart):
 			m.runServiceActionAndRefresh(m.deps.services.Restart)
+		case keypkg.Matches(msg, keys.reveal):
+			m.reveal = !m.reveal
 		}
 	}
 	return m, nil
@@ -205,6 +223,8 @@ func (m model) renderMain() string {
 	switch m.activeTab {
 	case overviewTab:
 		body += m.renderOverview()
+	case cursorTab:
+		body += m.renderCursor()
 	case profileTab:
 		body += m.renderProfile()
 	case servicesTab:
@@ -229,6 +249,17 @@ func (m *model) refresh() {
 	m.models, m.modelErr = loadModels(m.runtime)
 	m.usageSummary, m.usageErr = m.deps.usage(m.runtime)
 	m.logPreview = loadLogPreview(m.runtime)
+
+	// Resolve Cursor settings and ngrok readiness once per refresh (not per
+	// render): renderCursor runs from View() on every keypress, and the ngrok
+	// check shells out to `ngrok config check`, which would stall the UI.
+	m.cursorInfo, m.cursorErr = core.CursorSettingsInfo(m.runtime)
+	m.ngrokChecked = false
+	m.ngrokErr = nil
+	if m.cursorErr == nil && !m.cursorInfo.LocalOnly && m.deps.ngrok != nil {
+		m.ngrokChecked = true
+		m.ngrokErr = m.deps.ngrok()
+	}
 }
 
 func (m model) renderSidebar() string {
@@ -262,6 +293,49 @@ func (m model) renderOverview() string {
 	) + section("Next Action",
 		progress.nextAction,
 	)
+}
+
+func (m model) renderCursor() string {
+	if m.cursorErr != nil {
+		return section("Cursor", "Cursor settings unavailable: "+m.cursorErr.Error()+"\nRun ezyl3 setup first.")
+	}
+	info := m.cursorInfo
+
+	apiKey := "set"
+	if strings.TrimSpace(info.MasterKey) == "" {
+		apiKey = "empty"
+	}
+	if m.reveal {
+		apiKey = info.MasterKey
+	}
+	settings := fmt.Sprintf("Base URL: %s\nAPI key: %s", info.BaseURL, apiKey)
+	out := section("Cursor Connection", settings)
+	out += section("Models (Cursor picker)", strings.Join(info.Models, "\n"))
+
+	if info.LocalOnly {
+		out += section("Warning", warnStyle.Render("This is a local-only base URL. Cursor cannot use it:\n"+
+			"Cursor's backend rejects localhost/private addresses (it needs a\n"+
+			"public HTTPS target). Add a tunnel with:\n"+
+			"  ezyl3 setup --force --domain <name>.ngrok-free.dev"))
+	} else if m.ngrokChecked {
+		// Readiness was resolved in refresh(); render from the cached result.
+		if m.ngrokErr != nil {
+			detail := m.ngrokErr.Error()
+			if i := strings.IndexByte(detail, '\n'); i >= 0 {
+				detail = detail[:i]
+			}
+			out += section("ngrok", missingStyle.Render("not ready: "+detail))
+		} else {
+			out += section("ngrok", okStyle.Render("ngrok ready"))
+		}
+	}
+
+	hint := "press c to reveal the API key"
+	if m.reveal {
+		hint = "press c to hide the API key"
+	}
+	out += section("Connect", "Paste the Base URL and API key into Cursor's OpenAI settings.\n"+mutedStyle.Render(hint))
+	return out
 }
 
 func (m model) renderProfile() string {

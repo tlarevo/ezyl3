@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +55,7 @@ func TestTUIViewNavigatesSetupCompanionTabs(t *testing.T) {
 	}
 	updated, _ := m.Update(key("tab"))
 	m = updated.(model)
-	if m.activeTab != 1 || !strings.Contains(m.View(), "Profile") {
+	if m.activeTab != cursorTab || !strings.Contains(m.View(), "Cursor") {
 		t.Fatalf("tab navigation failed: active=%d view=\n%s", m.activeTab, m.View())
 	}
 }
@@ -326,4 +327,148 @@ func writeTestProfile(t *testing.T, runtime core.Runtime, mode string) {
 
 func key(value string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(value)}
+}
+
+// writeCursorFixture creates a runtime with a master key, optionally tunneled.
+func writeCursorFixture(t *testing.T, domain string) core.Runtime {
+	t.Helper()
+	runtime := core.NewRuntime(t.TempDir())
+	if err := os.WriteFile(filepath.Join(runtime.Path, ".env"), []byte("LITELLM_MASTER_KEY=\"sk-cursor-abc123\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profile := core.Profile{Name: "default", Mode: core.ProfileModeManaged}
+	if domain != "" {
+		profile.Domain = domain
+		profile.TunnelProvider = "ngrok"
+	}
+	if err := core.WriteProfileFile(runtime.Path, profile); err != nil {
+		t.Fatal(err)
+	}
+	return runtime
+}
+
+func cursorModel(t *testing.T, runtime core.Runtime) model {
+	t.Helper()
+	m := newModelWithDeps(runtime, dependencies{
+		doctor:   func(core.Runtime) core.DoctorReport { return core.DoctorReport{} },
+		services: &fakeServices{},
+	})
+	m.activeTab = cursorTab
+	return m
+}
+
+func TestTUICursorTabShowsBaseURLAndModelsRedactedByDefault(t *testing.T) {
+	runtime := writeCursorFixture(t, "demo.ngrok-free.dev")
+	view := cursorModel(t, runtime).View()
+
+	if !strings.Contains(view, "https://demo.ngrok-free.dev/v1") {
+		t.Fatalf("cursor tab missing base URL:\n%s", view)
+	}
+	for _, name := range []string{"litellm-auto", "litellm-simple", "litellm-medium", "litellm-complex", "litellm-reasoning"} {
+		if !strings.Contains(view, name) {
+			t.Fatalf("cursor tab missing model %q:\n%s", name, view)
+		}
+	}
+	if strings.Contains(view, "sk-cursor-abc123") {
+		t.Fatalf("cursor tab leaked the key while redacted:\n%s", view)
+	}
+}
+
+func cursorModelWithNgrok(t *testing.T, runtime core.Runtime, ngrok func() error) model {
+	t.Helper()
+	m := newModelWithDeps(runtime, dependencies{
+		doctor:   func(core.Runtime) core.DoctorReport { return core.DoctorReport{} },
+		services: &fakeServices{},
+		ngrok:    ngrok,
+	})
+	m.activeTab = cursorTab
+	return m
+}
+
+func TestTUICursorTabShowsNgrokReadyBadge(t *testing.T) {
+	m := cursorModelWithNgrok(t, writeCursorFixture(t, "demo.ngrok-free.dev"), func() error { return nil })
+	if !strings.Contains(m.View(), "ngrok ready") {
+		t.Fatalf("expected ngrok readiness on tunneled cursor tab:\n%s", m.View())
+	}
+}
+
+func TestTUICursorTabShowsNgrokError(t *testing.T) {
+	m := cursorModelWithNgrok(t, writeCursorFixture(t, "demo.ngrok-free.dev"),
+		func() error { return errors.New("ngrok binary not found on PATH") })
+	if !strings.Contains(m.View(), "ngrok binary not found") {
+		t.Fatalf("expected ngrok error on cursor tab:\n%s", m.View())
+	}
+}
+
+func TestTUICursorNgrokCheckedOncePerRefreshNotPerRender(t *testing.T) {
+	calls := 0
+	m := cursorModelWithNgrok(t, writeCursorFixture(t, "demo.ngrok-free.dev"),
+		func() error { calls++; return nil })
+	// newModelWithDeps already ran refresh() once.
+	if calls != 1 {
+		t.Fatalf("expected one ngrok check at refresh, got %d", calls)
+	}
+	// renderCursor runs from View() on every keypress; it must not re-probe ngrok.
+	for i := 0; i < 20; i++ {
+		_ = m.View()
+	}
+	if calls != 1 {
+		t.Fatalf("ngrok probed during render: %d calls, want 1", calls)
+	}
+}
+
+func TestTUICursorTabOmitsNgrokForLocalOnly(t *testing.T) {
+	m := cursorModelWithNgrok(t, writeCursorFixture(t, ""),
+		func() error { return errors.New("should not be called") })
+	if strings.Contains(m.View(), "ngrok ready") {
+		t.Fatalf("local-only cursor tab should not show an ngrok badge:\n%s", m.View())
+	}
+}
+
+func TestTUICursorRevealTogglesKeyOnCursorTab(t *testing.T) {
+	m := cursorModel(t, writeCursorFixture(t, "demo.ngrok-free.dev"))
+
+	// Default redacted.
+	if strings.Contains(m.View(), "sk-cursor-abc123") {
+		t.Fatalf("key revealed before pressing c:\n%s", m.View())
+	}
+	// Press c -> revealed, clean unquoted key.
+	updated, _ := m.Update(key("c"))
+	m = updated.(model)
+	view := m.View()
+	if !strings.Contains(view, "sk-cursor-abc123") {
+		t.Fatalf("c did not reveal the key:\n%s", view)
+	}
+	if strings.Contains(view, "\"sk-cursor-abc123\"") {
+		t.Fatalf("revealed key must not be quoted:\n%s", view)
+	}
+	// Press c again -> redacted.
+	updated, _ = m.Update(key("c"))
+	m = updated.(model)
+	if strings.Contains(m.View(), "sk-cursor-abc123") {
+		t.Fatalf("second c did not re-redact:\n%s", m.View())
+	}
+}
+
+func TestTUICursorRevealIsGatedToCursorTab(t *testing.T) {
+	m := cursorModel(t, writeCursorFixture(t, "demo.ngrok-free.dev"))
+	m.activeTab = overviewTab
+
+	updated, _ := m.Update(key("c"))
+	m = updated.(model)
+	if m.reveal {
+		t.Fatalf("c should not toggle reveal off the Cursor tab")
+	}
+}
+
+func TestTUICursorTabWarnsForLocalOnlyProfile(t *testing.T) {
+	local := cursorModel(t, writeCursorFixture(t, "")).View()
+	if !strings.Contains(local, "http://127.0.0.1:4400/v1") || !strings.Contains(local, "Cursor cannot use it") {
+		t.Fatalf("local-only cursor tab should warn:\n%s", local)
+	}
+
+	tunneled := cursorModel(t, writeCursorFixture(t, "demo.ngrok-free.dev")).View()
+	if strings.Contains(tunneled, "Cursor cannot use it") {
+		t.Fatalf("tunneled cursor tab should not warn:\n%s", tunneled)
+	}
 }

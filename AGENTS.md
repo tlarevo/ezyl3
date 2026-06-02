@@ -36,19 +36,27 @@ Merge + cleanup
 - **PR**: one PR per coherent vertical slice. Tracking lives in GitHub
   (PRs/issues) — do not add a parallel tracking system.
 
-## Branch / commit / PR flow (worktree)
+## Branch / commit / PR flow
 
-Use the `worktree` skill for branch and PR management. The canonical loop:
+Agents work in the harness-provided worktree they are spawned in
+(`.claude/worktrees/<name>`) using plain `git`. One branch at a time, in place.
+The canonical loop:
 
-1. **Branch off the latest `main`**: `git fetch origin && git checkout -b <type>/<slug> origin/main`.
+1. **Branch off the latest `main`**:
+   `git fetch origin && git checkout -b <type>/<slug> origin/main`.
    Never branch off another feature branch unless you intend to stack.
 2. **Implement** in small commits.
 3. **Run the verification gate** (below) — *before every commit*.
-4. **Push** and open a PR against `main`.
+4. **Push** and open a PR against `main` (`gh pr create`).
 5. **Address review comments**, push fixes, reply on each thread, resolve it.
-6. **After merge, clean up** the branch/worktree.
+6. **After merge**, the branch is done; the next task starts from a fresh
+   `origin/main`.
 
 Branch naming: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`.
+
+The primary checkout (wherever the repo is cloned) stays on `main` — never commit
+feature work there. The harness worktree is where the agent operates; the primary
+is the human's `main` reference.
 
 Commit messages: imperative subject, a body explaining *why* when non-obvious,
 and end with:

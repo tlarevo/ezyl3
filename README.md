@@ -312,6 +312,8 @@ Open the setup companion TUI:
 
 The TUI shows setup overview, local usage, profile mode, services, model tiers, doctor checks, and recent LiteLLM log output. In the Services view, press `s` to start, `x` to stop, and `k` to restart services.
 
+The **Cursor** tab shows everything needed to connect Cursor: the base URL, the model picker names (`litellm-auto` and the four tiers), and the API key (redacted by default — press `c` to reveal the clean, paste-ready value). For a local-only profile it warns that Cursor cannot use a localhost URL; for a tunneled profile it shows ngrok readiness.
+
 ## Version
 
 Print the build version:
