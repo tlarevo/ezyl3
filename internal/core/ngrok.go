@@ -1,12 +1,16 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
+
+const ngrokCheckTimeout = 10 * time.Second
 
 var ngrokDomainPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.ngrok-free\.(dev|app)$`)
 
@@ -33,8 +37,13 @@ func (DefaultNgrokChecker) CheckNgrokReady() error {
 	if _, err := exec.LookPath("ngrok"); err != nil {
 		return fmt.Errorf("ngrok binary not found on PATH.\n%s", ngrokSetupHelp)
 	}
-	out, err := exec.Command("ngrok", "config", "check").CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), ngrokCheckTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ngrok", "config", "check").CombinedOutput()
 	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("ngrok config check timed out after %s; ensure ngrok is responsive.\n%s", ngrokCheckTimeout, ngrokSetupHelp)
+		}
 		return fmt.Errorf("ngrok is installed but not configured (%s).\n%s", strings.TrimSpace(string(out)), ngrokSetupHelp)
 	}
 	return nil
