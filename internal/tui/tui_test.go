@@ -373,6 +373,42 @@ func TestTUICursorTabShowsBaseURLAndModelsRedactedByDefault(t *testing.T) {
 	}
 }
 
+func TestTUICursorRevealTogglesKeyOnCursorTab(t *testing.T) {
+	m := cursorModel(t, writeCursorFixture(t, "demo.ngrok-free.dev"))
+
+	// Default redacted.
+	if strings.Contains(m.View(), "sk-cursor-abc123") {
+		t.Fatalf("key revealed before pressing c:\n%s", m.View())
+	}
+	// Press c -> revealed, clean unquoted key.
+	updated, _ := m.Update(key("c"))
+	m = updated.(model)
+	view := m.View()
+	if !strings.Contains(view, "sk-cursor-abc123") {
+		t.Fatalf("c did not reveal the key:\n%s", view)
+	}
+	if strings.Contains(view, "\"sk-cursor-abc123\"") {
+		t.Fatalf("revealed key must not be quoted:\n%s", view)
+	}
+	// Press c again -> redacted.
+	updated, _ = m.Update(key("c"))
+	m = updated.(model)
+	if strings.Contains(m.View(), "sk-cursor-abc123") {
+		t.Fatalf("second c did not re-redact:\n%s", m.View())
+	}
+}
+
+func TestTUICursorRevealIsGatedToCursorTab(t *testing.T) {
+	m := cursorModel(t, writeCursorFixture(t, "demo.ngrok-free.dev"))
+	m.activeTab = overviewTab
+
+	updated, _ := m.Update(key("c"))
+	m = updated.(model)
+	if m.reveal {
+		t.Fatalf("c should not toggle reveal off the Cursor tab")
+	}
+}
+
 func TestTUICursorTabWarnsForLocalOnlyProfile(t *testing.T) {
 	local := cursorModel(t, writeCursorFixture(t, "")).View()
 	if !strings.Contains(local, "http://127.0.0.1:4400/v1") || !strings.Contains(local, "Cursor cannot use it") {

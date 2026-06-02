@@ -61,6 +61,7 @@ type keyMap struct {
 	start    keypkg.Binding
 	stop     keypkg.Binding
 	restart  keypkg.Binding
+	reveal   keypkg.Binding
 }
 
 func newKeyMap(activeTab int) keyMap {
@@ -93,22 +94,27 @@ func newKeyMap(activeTab int) keyMap {
 			keypkg.WithKeys("k"),
 			keypkg.WithHelp("k", "restart"),
 		),
+		reveal: keypkg.NewBinding(
+			keypkg.WithKeys("c"),
+			keypkg.WithHelp("c", "reveal key"),
+		),
 	}
 	servicesActive := activeTab == servicesTab
 	keys.start.SetEnabled(servicesActive)
 	keys.stop.SetEnabled(servicesActive)
 	keys.restart.SetEnabled(servicesActive)
+	keys.reveal.SetEnabled(activeTab == cursorTab)
 	return keys
 }
 
 func (k keyMap) ShortHelp() []keypkg.Binding {
-	return []keypkg.Binding{k.next, k.refresh, k.quit, k.start, k.stop, k.restart}
+	return []keypkg.Binding{k.next, k.refresh, k.quit, k.start, k.stop, k.restart, k.reveal}
 }
 
 func (k keyMap) FullHelp() [][]keypkg.Binding {
 	return [][]keypkg.Binding{
 		{k.next, k.previous, k.refresh, k.quit},
-		{k.start, k.stop, k.restart},
+		{k.start, k.stop, k.restart, k.reveal},
 	}
 }
 
@@ -190,6 +196,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runServiceActionAndRefresh(m.deps.services.Stop)
 		case keypkg.Matches(msg, keys.restart):
 			m.runServiceActionAndRefresh(m.deps.services.Restart)
+		case keypkg.Matches(msg, keys.reveal):
+			m.reveal = !m.reveal
 		}
 	}
 	return m, nil
