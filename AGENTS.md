@@ -54,9 +54,9 @@ The canonical loop:
 
 Branch naming: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`.
 
-The primary checkout (`~/Documents/ezyl3`) stays on `main` — never commit feature
-work there. The harness worktree is where the agent operates; the primary is the
-human's `main` reference.
+The primary checkout (wherever the repo is cloned) stays on `main` — never commit
+feature work there. The harness worktree is where the agent operates; the primary
+is the human's `main` reference.
 
 Commit messages: imperative subject, a body explaining *why* when non-obvious,
 and end with:
