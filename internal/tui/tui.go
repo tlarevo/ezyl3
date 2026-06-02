@@ -18,6 +18,7 @@ import (
 
 const (
 	overviewTab = iota
+	cursorTab
 	profileTab
 	servicesTab
 	modelsTab
@@ -25,7 +26,7 @@ const (
 	logsTab
 )
 
-var tabs = []string{"Overview", "Profile", "Services", "Models", "Doctor", "Logs"}
+var tabs = []string{"Overview", "Cursor", "Profile", "Services", "Models", "Doctor", "Logs"}
 
 var (
 	appStyle       = lipgloss.NewStyle().Padding(1, 2)
@@ -123,6 +124,7 @@ type model struct {
 	logPreview     string
 	message        string
 	activeTab      int
+	reveal         bool
 	setupBar       progress.Model
 	help           help.Model
 	deps           dependencies
@@ -205,6 +207,8 @@ func (m model) renderMain() string {
 	switch m.activeTab {
 	case overviewTab:
 		body += m.renderOverview()
+	case cursorTab:
+		body += m.renderCursor()
 	case profileTab:
 		body += m.renderProfile()
 	case servicesTab:
@@ -262,6 +266,38 @@ func (m model) renderOverview() string {
 	) + section("Next Action",
 		progress.nextAction,
 	)
+}
+
+func (m model) renderCursor() string {
+	info, err := core.CursorSettingsInfo(m.runtime)
+	if err != nil {
+		return section("Cursor", "Cursor settings unavailable: "+err.Error()+"\nRun ezyl3 setup first.")
+	}
+
+	apiKey := "set"
+	if strings.TrimSpace(info.MasterKey) == "" {
+		apiKey = "empty"
+	}
+	if m.reveal {
+		apiKey = info.MasterKey
+	}
+	settings := fmt.Sprintf("Base URL: %s\nAPI key: %s", info.BaseURL, apiKey)
+	out := section("Cursor Connection", settings)
+	out += section("Models (Cursor picker)", strings.Join(info.Models, "\n"))
+
+	if info.LocalOnly {
+		out += section("Warning", warnStyle.Render("This is a local-only base URL. Cursor cannot use it:\n"+
+			"Cursor's backend rejects localhost/private addresses (it needs a\n"+
+			"public HTTPS target). Add a tunnel with:\n"+
+			"  ezyl3 setup --force --domain <name>.ngrok-free.dev"))
+	}
+
+	hint := "press c to reveal the API key"
+	if m.reveal {
+		hint = "press c to hide the API key"
+	}
+	out += section("Connect", "Paste the Base URL and API key into Cursor's OpenAI settings.\n"+mutedStyle.Render(hint))
+	return out
 }
 
 func (m model) renderProfile() string {
