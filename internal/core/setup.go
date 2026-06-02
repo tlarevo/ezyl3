@@ -19,6 +19,7 @@ type SetupOptions struct {
 type SetupDependencies struct {
 	Installer         PythonInstaller
 	LaunchAgentWriter LaunchAgentWriter
+	NgrokChecker      NgrokChecker
 }
 
 type PythonInstaller interface {
@@ -60,6 +61,16 @@ func RunSetup(opts SetupOptions, deps SetupDependencies) (SetupResult, error) {
 	if strings.TrimSpace(opts.Domain) != "" {
 		domain, err = NormalizeNgrokDomain(opts.Domain)
 		if err != nil {
+			return SetupResult{}, err
+		}
+		// Preflight ngrok before writing anything: a tunneled profile is useless
+		// without a working ngrok, and failing here is far clearer than a launchd
+		// error at service-start time.
+		checker := deps.NgrokChecker
+		if checker == nil {
+			checker = DefaultNgrokChecker{}
+		}
+		if err := checker.CheckNgrokReady(); err != nil {
 			return SetupResult{}, err
 		}
 	}

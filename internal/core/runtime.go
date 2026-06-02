@@ -61,9 +61,24 @@ func Doctor(runtime Runtime) DoctorReport {
 		httpCheck("ngrok inspector", "http://127.0.0.1:4040/api/tunnels", "ngrok is not reachable; local-only profiles can ignore this"),
 	)
 	if domain, err := DetectNgrokDomain(runtime.Path); err == nil {
+		ngrokReady := Check{Name: "ngrok ready", OK: true, Detail: "installed and configured"}
+		if readyErr := (DefaultNgrokChecker{}).CheckNgrokReady(); readyErr != nil {
+			ngrokReady.OK = false
+			ngrokReady.Detail = firstLine(readyErr.Error())
+		}
+		checks = append(checks, ngrokReady)
 		checks = append(checks, httpCheck("tunnel liveliness", "https://"+domain+"/health/liveliness", "domain: "+domain))
 	}
 	return DoctorReport{RuntimePath: runtime.Path, Checks: checks}
+}
+
+// firstLine returns the first line of s, keeping multi-line guidance out of the
+// single-line doctor table; full instructions are shown by setup itself.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 func RuntimeLogsDir(runtime Runtime) string {

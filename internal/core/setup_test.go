@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -161,7 +162,7 @@ func TestRunSetupNormalizesNgrokDomainBeforeWriting(t *testing.T) {
 		Domain:         "https://Example.ngrok-free.dev/",
 		ExecutablePath: "/usr/local/bin/ezyl3",
 		SkipPythonDeps: true,
-	}, SetupDependencies{LaunchAgentWriter: writer})
+	}, SetupDependencies{LaunchAgentWriter: writer, NgrokChecker: fakeNgrokChecker{}})
 	if err != nil {
 		t.Fatalf("RunSetup returned error: %v", err)
 	}
@@ -171,6 +172,54 @@ func TestRunSetupNormalizesNgrokDomainBeforeWriting(t *testing.T) {
 	}
 	if len(writer.calls) != 1 || writer.calls[0].domain != "example.ngrok-free.dev" {
 		t.Fatalf("launch writer calls = %#v", writer.calls)
+	}
+}
+
+type fakeNgrokChecker struct{ err error }
+
+func (f fakeNgrokChecker) CheckNgrokReady() error { return f.err }
+
+func TestRunSetupFailsFastWhenNgrokNotReadyForTunnel(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	writer := &fakeLaunchAgentWriter{}
+
+	_, err := RunSetup(SetupOptions{
+		Paths:          paths,
+		Domain:         "example.ngrok-free.dev",
+		ExecutablePath: "/usr/local/bin/ezyl3",
+		SkipPythonDeps: true,
+	}, SetupDependencies{
+		LaunchAgentWriter: writer,
+		NgrokChecker:      fakeNgrokChecker{err: errors.New("ngrok binary not found on PATH")},
+	})
+	if err == nil || !strings.Contains(err.Error(), "ngrok binary not found") {
+		t.Fatalf("RunSetup error = %v, want ngrok-not-ready", err)
+	}
+	// Nothing should be written when the preflight fails.
+	if len(writer.calls) != 0 {
+		t.Fatalf("launch writer called despite ngrok preflight failure: %#v", writer.calls)
+	}
+	if _, statErr := os.Stat(paths.ProfileDir); !os.IsNotExist(statErr) {
+		t.Fatalf("profile dir created despite ngrok preflight failure: %v", statErr)
+	}
+}
+
+func TestRunSetupSkipsNgrokPreflightForLocalOnlyProfile(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	writer := &fakeLaunchAgentWriter{}
+
+	// A failing checker must NOT block a local-only (no domain) setup, because
+	// local-only profiles never use ngrok.
+	_, err := RunSetup(SetupOptions{
+		Paths:          paths,
+		ExecutablePath: "/usr/local/bin/ezyl3",
+		SkipPythonDeps: true,
+	}, SetupDependencies{
+		LaunchAgentWriter: writer,
+		NgrokChecker:      fakeNgrokChecker{err: errors.New("ngrok not installed")},
+	})
+	if err != nil {
+		t.Fatalf("local-only setup should not run ngrok preflight: %v", err)
 	}
 }
 
