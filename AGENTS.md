@@ -82,6 +82,22 @@ CI runs `gofmt -l`, `go vet`, `go test`, and `goreleaser check` on every PR, so
 red here means red there. Running the full suite locally first is faster than a
 CI round-trip.
 
+## Pre-release smoke test
+
+Before tagging a release, run the end-to-end smoke test. It exercises the built
+binary against real HOME/XDG paths (the integration surface `go test` fakes) and
+hands off to the interactive TUI for the alt-screen check that cannot be verified
+headlessly:
+
+```bash
+scripts/smoke-test.sh            # automated checks, then launches the TUI
+scripts/smoke-test.sh --no-tui   # automated checks only (CI / headless)
+```
+
+It runs setup -> automated CLI checks -> interactive TUI -> cleanup; the sandbox
+HOME is removed on exit (including when you quit the TUI). The TUI render is the
+one thing an agent cannot verify — a human must confirm it before a release tag.
+
 ## Hard-won rules
 
 These exist because skipping them caused real breakage:
