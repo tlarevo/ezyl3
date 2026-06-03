@@ -272,3 +272,37 @@ func TestDetectNgrokDomainReadsProfileJSON(t *testing.T) {
 		t.Fatalf("domain = %q", domain)
 	}
 }
+
+func TestCursorSettingsInfoDirectProfileUsesPublicURL(t *testing.T) {
+	runtime := NewRuntime(t.TempDir())
+	if err := os.WriteFile(filepath.Join(runtime.Path, ".env"), []byte("LITELLM_MASTER_KEY=\"sk-secret\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A direct profile records a public URL and has no ngrok domain.
+	if err := WriteProfileFile(runtime.Path, Profile{
+		Name: "default", Mode: ProfileModeManaged,
+		ExposureMode: ExposureDirect, PublicURL: "https://llm.example.com",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := CursorSettingsInfo(runtime)
+	if err != nil {
+		t.Fatalf("CursorSettingsInfo returned error: %v", err)
+	}
+	if info.BaseURL != "https://llm.example.com/v1" {
+		t.Fatalf("BaseURL = %q, want the direct public URL", info.BaseURL)
+	}
+	if info.LocalOnly {
+		t.Fatalf("a direct profile must not be local-only")
+	}
+
+	// CursorSettings (string) must show the public URL and no local-only warning.
+	settings, err := CursorSettings(runtime, false)
+	if err != nil {
+		t.Fatalf("CursorSettings returned error: %v", err)
+	}
+	if !strings.Contains(settings, "https://llm.example.com/v1") || strings.Contains(settings, "WARNING") {
+		t.Fatalf("direct settings should show public URL with no warning:\n%s", settings)
+	}
+}

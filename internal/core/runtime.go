@@ -110,10 +110,14 @@ type CursorInfo struct {
 // CursorSettingsInfo resolves the Cursor connection details for a runtime. It is
 // the single source consumed by both the CLI (CursorSettings) and the TUI.
 func CursorSettingsInfo(runtime Runtime) (CursorInfo, error) {
-	domain, err := DetectNgrokDomain(runtime.Path)
+	// Base URL precedence: a recorded public URL (direct exposure) wins over an
+	// ngrok tunnel, which wins over local-only.
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d/v1", runtime.Port)
 	localOnly := true
-	if err == nil {
+	if profile, err := LoadProfileFromRuntime(runtime.Path); err == nil && strings.TrimSpace(profile.PublicURL) != "" {
+		baseURL = strings.TrimRight(profile.PublicURL, "/") + "/v1"
+		localOnly = false
+	} else if domain, err := DetectNgrokDomain(runtime.Path); err == nil {
 		baseURL = "https://" + domain + "/v1"
 		localOnly = false
 	}
