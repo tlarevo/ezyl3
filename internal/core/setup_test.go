@@ -162,7 +162,7 @@ func TestRunSetupNormalizesNgrokDomainBeforeWriting(t *testing.T) {
 		Domain:         "https://Example.ngrok-free.dev/",
 		ExecutablePath: "/usr/local/bin/ezyl3",
 		SkipPythonDeps: true,
-	}, SetupDependencies{LaunchAgentWriter: writer, NgrokChecker: fakeNgrokChecker{}})
+	}, SetupDependencies{LaunchAgentWriter: writer, NgrokChecker: &fakeNgrokChecker{}})
 	if err != nil {
 		t.Fatalf("RunSetup returned error: %v", err)
 	}
@@ -175,9 +175,71 @@ func TestRunSetupNormalizesNgrokDomainBeforeWriting(t *testing.T) {
 	}
 }
 
-type fakeNgrokChecker struct{ err error }
+type fakeNgrokChecker struct {
+	err    error
+	called bool
+}
 
-func (f fakeNgrokChecker) CheckNgrokReady() error { return f.err }
+func (f *fakeNgrokChecker) CheckNgrokReady() error { f.called = true; return f.err }
+
+func TestRunSetupPublicURLCreatesDirectProfileWithoutNgrok(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	writer := &fakeLaunchAgentWriter{}
+	checker := &fakeNgrokChecker{err: errors.New("ngrok should not be checked for direct")}
+
+	result, err := RunSetup(SetupOptions{
+		Paths:          paths,
+		PublicURL:      "https://llm.example.com",
+		ExecutablePath: "/usr/local/bin/ezyl3",
+		SkipPythonDeps: true,
+	}, SetupDependencies{Installer: &fakeInstaller{}, LaunchAgentWriter: writer, NgrokChecker: checker})
+	if err != nil {
+		t.Fatalf("RunSetup returned error: %v", err)
+	}
+	if checker.called {
+		t.Fatalf("ngrok checker must not run for a direct (--public-url) profile")
+	}
+	if result.Profile.Exposure() != ExposureDirect || result.Profile.PublicURL != "https://llm.example.com" {
+		t.Fatalf("profile = %#v, want direct with public URL", result.Profile)
+	}
+	if result.BaseURL != "https://llm.example.com/v1" {
+		t.Fatalf("BaseURL = %q, want direct public URL", result.BaseURL)
+	}
+	// Direct profiles do not write an ngrok LaunchAgent.
+	if len(writer.calls) != 1 || writer.calls[0].domain != "" {
+		t.Fatalf("launch writer calls = %#v, want one call with empty domain", writer.calls)
+	}
+}
+
+func TestRunSetupRejectsBothDomainAndPublicURL(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	_, err := RunSetup(SetupOptions{
+		Paths:          paths,
+		Domain:         "example.ngrok-free.dev",
+		PublicURL:      "https://llm.example.com",
+		ExecutablePath: "/usr/local/bin/ezyl3",
+		SkipPythonDeps: true,
+	}, SetupDependencies{Installer: &fakeInstaller{}, LaunchAgentWriter: &fakeLaunchAgentWriter{}, NgrokChecker: &fakeNgrokChecker{}})
+	if err == nil || !strings.Contains(err.Error(), "both") {
+		t.Fatalf("RunSetup error = %v, want rejection of domain+public-url", err)
+	}
+	if _, statErr := os.Stat(paths.ProfileDir); !os.IsNotExist(statErr) {
+		t.Fatalf("profile dir created despite conflicting options: %v", statErr)
+	}
+}
+
+func TestRunSetupRejectsInvalidPublicURL(t *testing.T) {
+	paths := setupTestPaths(t, "default")
+	_, err := RunSetup(SetupOptions{
+		Paths:          paths,
+		PublicURL:      "http://insecure.example.com",
+		ExecutablePath: "/usr/local/bin/ezyl3",
+		SkipPythonDeps: true,
+	}, SetupDependencies{Installer: &fakeInstaller{}, LaunchAgentWriter: &fakeLaunchAgentWriter{}, NgrokChecker: &fakeNgrokChecker{}})
+	if err == nil || !strings.Contains(err.Error(), "https") {
+		t.Fatalf("RunSetup error = %v, want https validation failure", err)
+	}
+}
 
 func TestRunSetupFailsFastWhenNgrokNotReadyForTunnel(t *testing.T) {
 	paths := setupTestPaths(t, "default")
@@ -190,7 +252,7 @@ func TestRunSetupFailsFastWhenNgrokNotReadyForTunnel(t *testing.T) {
 		SkipPythonDeps: true,
 	}, SetupDependencies{
 		LaunchAgentWriter: writer,
-		NgrokChecker:      fakeNgrokChecker{err: errors.New("ngrok binary not found on PATH")},
+		NgrokChecker:      &fakeNgrokChecker{err: errors.New("ngrok binary not found on PATH")},
 	})
 	if err == nil || !strings.Contains(err.Error(), "ngrok binary not found") {
 		t.Fatalf("RunSetup error = %v, want ngrok-not-ready", err)
@@ -216,7 +278,7 @@ func TestRunSetupSkipsNgrokPreflightForLocalOnlyProfile(t *testing.T) {
 		SkipPythonDeps: true,
 	}, SetupDependencies{
 		LaunchAgentWriter: writer,
-		NgrokChecker:      fakeNgrokChecker{err: errors.New("ngrok not installed")},
+		NgrokChecker:      &fakeNgrokChecker{err: errors.New("ngrok not installed")},
 	})
 	if err != nil {
 		t.Fatalf("local-only setup should not run ngrok preflight: %v", err)

@@ -59,3 +59,18 @@ func TestLoadProfileFromRuntimeFallsBackToLegacyMetadata(t *testing.T) {
 		t.Fatalf("profile = %#v", profile)
 	}
 }
+
+func TestProfileExposureStoredAndInferred(t *testing.T) {
+	// Explicit mode wins.
+	if got := (Profile{ExposureMode: ExposureDirect}).Exposure(); got != ExposureDirect {
+		t.Fatalf("explicit exposure = %q, want direct", got)
+	}
+	// Legacy profile with a domain but no exposure mode infers tunnel.
+	if got := (Profile{Domain: "demo.ngrok-free.dev"}).Exposure(); got != ExposureTunnel {
+		t.Fatalf("legacy domain exposure = %q, want tunnel", got)
+	}
+	// Legacy profile with neither infers local.
+	if got := (Profile{}).Exposure(); got != ExposureLocal {
+		t.Fatalf("empty exposure = %q, want local", got)
+	}
+}

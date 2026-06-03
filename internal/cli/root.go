@@ -287,6 +287,7 @@ func importCommand(opts *options) *cobra.Command {
 
 func setupCommand(opts *options) *cobra.Command {
 	var domain string
+	var publicURL string
 	var ollamaKey string
 	var hfToken string
 	var hfBillTo string
@@ -305,7 +306,9 @@ func setupCommand(opts *options) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("resolve ezyl3 executable path: %w", err)
 			}
-			if isInteractive(cmd) {
+			// The interactive wizard does not yet support --public-url, so a
+			// direct-exposure setup always uses the scripted path.
+			if isInteractive(cmd) && strings.TrimSpace(publicURL) == "" {
 				_, err := setupwizard.Run(setupwizard.Options{
 					Paths:          paths,
 					Domain:         domain,
@@ -320,6 +323,7 @@ func setupCommand(opts *options) *cobra.Command {
 			result, err := core.RunSetup(core.SetupOptions{
 				Paths:          paths,
 				Domain:         domain,
+				PublicURL:      publicURL,
 				ExecutablePath: executablePath,
 				Secrets:        secrets,
 				Force:          force,
@@ -333,6 +337,7 @@ func setupCommand(opts *options) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&domain, "domain", "", "ngrok domain, for example name.ngrok-free.dev")
+	cmd.Flags().StringVar(&publicURL, "public-url", "", "public HTTPS URL reaching the proxy (direct exposure; alternative to --domain)")
 	cmd.Flags().StringVar(&ollamaKey, "ollama-api-key", "", "Ollama API key")
 	cmd.Flags().StringVar(&hfToken, "hf-token", "", "Hugging Face token")
 	cmd.Flags().StringVar(&hfBillTo, "hf-bill-to", "", "Hugging Face org billing slug")

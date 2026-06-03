@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os/exec"
 	"regexp"
@@ -13,6 +14,49 @@ import (
 const ngrokCheckTimeout = 10 * time.Second
 
 var ngrokDomainPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.ngrok-free\.(dev|app)$`)
+
+// NormalizePublicURL validates a user-supplied public HTTPS endpoint for a direct
+// exposure profile and returns it as a bare origin (scheme://host[:port]) with no
+// trailing slash. Callers append paths (`/v1`, `/health/liveliness`), so the URL
+// must be origin-only. Cursor requires a public HTTPS target, so http, bare
+// hosts, loopback/localhost, and any path/query/fragment are rejected.
+func NormalizePublicURL(input string) (string, error) {
+	value := strings.TrimSpace(input)
+	if value == "" {
+		return "", fmt.Errorf("public URL is required")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "", fmt.Errorf("invalid public URL %q: %w", input, err)
+	}
+	if parsed.Scheme != "https" {
+		return "", fmt.Errorf("public URL must be https, got %q", input)
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("public URL must include a host, got %q", input)
+	}
+	if isLoopbackHost(host) {
+		return "", fmt.Errorf("public URL must be a public host, not localhost/loopback: %q", input)
+	}
+	if path := strings.Trim(parsed.Path, "/"); path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("public URL must be an origin with no path (e.g. https://llm.example.com), got %q", input)
+	}
+	// Reconstruct the bare origin so a trailing slash or empty path normalizes the
+	// same way; callers append /v1 and /health/liveliness.
+	return parsed.Scheme + "://" + parsed.Host, nil
+}
+
+func isLoopbackHost(host string) bool {
+	lower := strings.ToLower(host)
+	if lower == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return true
+	}
+	return false
+}
 
 // ngrokSetupHelp is the actionable guidance shown when ngrok is not ready. It is
 // shared by setup preflight and doctor so the instructions stay consistent.

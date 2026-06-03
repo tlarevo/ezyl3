@@ -357,6 +357,30 @@ func cursorModel(t *testing.T, runtime core.Runtime) model {
 	return m
 }
 
+func TestTUICursorTabShowsDirectPublicURLWithoutWarning(t *testing.T) {
+	runtime := core.NewRuntime(t.TempDir())
+	if err := os.WriteFile(filepath.Join(runtime.Path, ".env"), []byte("LITELLM_MASTER_KEY=\"sk-cursor-abc123\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := core.WriteProfileFile(runtime.Path, core.Profile{
+		Name: "default", Mode: core.ProfileModeManaged,
+		ExposureMode: core.ExposureDirect, PublicURL: "https://llm.example.com",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	view := cursorModel(t, runtime).View()
+	if !strings.Contains(view, "https://llm.example.com/v1") {
+		t.Fatalf("direct profile cursor tab missing public URL:\n%s", view)
+	}
+	if strings.Contains(view, "Cursor cannot use it") {
+		t.Fatalf("direct profile must not show local-only warning:\n%s", view)
+	}
+	if strings.Contains(view, "ngrok ready") {
+		t.Fatalf("direct profile must not show an ngrok badge:\n%s", view)
+	}
+}
+
 func TestTUICursorTabShowsBaseURLAndModelsRedactedByDefault(t *testing.T) {
 	runtime := writeCursorFixture(t, "demo.ngrok-free.dev")
 	view := cursorModel(t, runtime).View()

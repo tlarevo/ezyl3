@@ -58,16 +58,34 @@ func Doctor(runtime Runtime) DoctorReport {
 	}
 	checks = append(checks,
 		httpCheck("LiteLLM liveliness", fmt.Sprintf("http://127.0.0.1:%d/health/liveliness", runtime.Port), "LiteLLM is not reachable; run ezyl3 service start or inspect ezyl3 logs litellm"),
-		httpCheck("ngrok inspector", "http://127.0.0.1:4040/api/tunnels", "ngrok is not reachable; local-only profiles can ignore this"),
 	)
-	if domain, err := DetectNgrokDomain(runtime.Path); err == nil {
+
+	// Exposure-specific reachability. Cursor needs a public HTTPS base URL — via
+	// an ngrok tunnel (--domain) or a public HTTPS endpoint reaching the proxy
+	// (--public-url). Branch on the profile's exposure mode.
+	profile, _ := LoadProfileFromRuntime(runtime.Path)
+	switch profile.Exposure() {
+	case ExposureDirect:
+		checks = append(checks, httpCheck("public endpoint",
+			strings.TrimRight(profile.PublicURL, "/")+"/health/liveliness",
+			"public: "+profile.PublicURL))
+	case ExposureTunnel:
+		checks = append(checks,
+			httpCheck("ngrok inspector", "http://127.0.0.1:4040/api/tunnels", "ngrok is not reachable; check ezyl3 logs ngrok"),
+		)
 		ngrokReady := Check{Name: "ngrok ready", OK: true, Detail: "installed and configured"}
 		if readyErr := (DefaultNgrokChecker{}).CheckNgrokReady(); readyErr != nil {
 			ngrokReady.OK = false
 			ngrokReady.Detail = firstLine(readyErr.Error())
 		}
 		checks = append(checks, ngrokReady)
-		checks = append(checks, httpCheck("tunnel liveliness", "https://"+domain+"/health/liveliness", "domain: "+domain))
+		if domain, err := DetectNgrokDomain(runtime.Path); err == nil {
+			checks = append(checks, httpCheck("tunnel liveliness", "https://"+domain+"/health/liveliness", "domain: "+domain))
+		}
+	default:
+		// local-only: nothing public to probe. Cursor cannot use this profile.
+		checks = append(checks, Check{Name: "exposure", OK: false,
+			Detail: "local-only: Cursor needs public HTTPS — set up a tunnel (--domain) or a public endpoint (--public-url)"})
 	}
 	return DoctorReport{RuntimePath: runtime.Path, Checks: checks}
 }
@@ -110,10 +128,14 @@ type CursorInfo struct {
 // CursorSettingsInfo resolves the Cursor connection details for a runtime. It is
 // the single source consumed by both the CLI (CursorSettings) and the TUI.
 func CursorSettingsInfo(runtime Runtime) (CursorInfo, error) {
-	domain, err := DetectNgrokDomain(runtime.Path)
+	// Base URL precedence: a recorded public URL (direct exposure) wins over an
+	// ngrok tunnel, which wins over local-only.
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d/v1", runtime.Port)
 	localOnly := true
-	if err == nil {
+	if profile, err := LoadProfileFromRuntime(runtime.Path); err == nil && strings.TrimSpace(profile.PublicURL) != "" {
+		baseURL = strings.TrimRight(profile.PublicURL, "/") + "/v1"
+		localOnly = false
+	} else if domain, err := DetectNgrokDomain(runtime.Path); err == nil {
 		baseURL = "https://" + domain + "/v1"
 		localOnly = false
 	}

@@ -14,24 +14,49 @@ Released binaries report their tag with:
 ezyl3 version
 ```
 
-## ngrok Prerequisite (for Cursor)
+## Exposure: getting Cursor to reach the proxy
 
-Cursor requires a public HTTPS base URL — it refuses to call `localhost`/private
-addresses. So to use ezyl3 with Cursor you need an ngrok tunnel, and ngrok must be
-installed and authenticated **before** you run `ezyl3 setup` with a domain:
+Cursor requires a **public HTTPS base URL** — it refuses to call `localhost` or
+private addresses. There are three ways to expose the proxy; pick one at setup:
+
+| Mode | Flag | When to use |
+|---|---|---|
+| **tunnel** | `--domain <name>.ngrok-free.dev` | a laptop with no public endpoint — ezyl3 runs an ngrok tunnel |
+| **direct** | `--public-url https://llm.example.com` | the proxy already sits behind a public HTTPS endpoint you control |
+| **local** | *(neither)* | direct API access only; **cannot** be used with Cursor |
+
+### Tunnel (ngrok)
+
+ngrok must be installed and authenticated **before** `ezyl3 setup --domain`:
 
 ```bash
 brew install --cask ngrok
 ngrok config add-authtoken <token>   # from https://dashboard.ngrok.com/get-started/your-authtoken
 ```
 
-Then claim a free static domain at https://dashboard.ngrok.com/domains and pass it
-to setup (`--domain <name>.ngrok-free.dev`). `ezyl3 setup` checks ngrok readiness
-up front and refuses a tunneled profile with clear guidance if ngrok is missing or
-unconfigured, rather than failing later at service start.
+Claim a free static domain at https://dashboard.ngrok.com/domains, then
+`ezyl3 setup --domain <name>.ngrok-free.dev`. Setup checks ngrok readiness up
+front and refuses with clear guidance if ngrok is missing — rather than failing
+later at service start.
 
-A **local-only** profile (no `--domain`) does not need ngrok at all — but it cannot
-be used with Cursor. It is only useful for direct API access to the proxy.
+### Direct (your own public HTTPS endpoint)
+
+If the proxy is already reachable over public HTTPS — behind a reverse proxy
+(Caddy/nginx), a cloud load balancer, Tailscale Funnel, or `cloudflared` — you do
+**not** need ngrok. Give ezyl3 the URL:
+
+```bash
+ezyl3 setup --public-url https://llm.example.com
+```
+
+ezyl3 **records** this URL and uses it for Cursor settings; it does **not** issue
+TLS certificates, generate reverse-proxy config, or manage any server. You own TLS
+termination, and your reverse proxy forwards to the proxy on `127.0.0.1:4400`. The
+URL must be `https://` with a public host (localhost/loopback are rejected). No
+ngrok is required or checked for a direct profile.
+
+> ngrok is only one tunnel implementation. `--public-url` covers any setup where
+> you already have a public HTTPS endpoint reaching the proxy.
 
 ## Build From Source
 

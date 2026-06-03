@@ -10,6 +10,7 @@ import (
 type SetupOptions struct {
 	Paths          ProfilePaths
 	Domain         string
+	PublicURL      string
 	ExecutablePath string
 	Secrets        Secrets
 	Force          bool
@@ -56,21 +57,39 @@ func RunSetup(opts SetupOptions, deps SetupDependencies) (SetupResult, error) {
 	if strings.TrimSpace(opts.Paths.ProfileDir) == "" {
 		return SetupResult{}, fmt.Errorf("profile paths are required")
 	}
+	hasDomain := strings.TrimSpace(opts.Domain) != ""
+	hasPublicURL := strings.TrimSpace(opts.PublicURL) != ""
+	if hasDomain && hasPublicURL {
+		return SetupResult{}, fmt.Errorf("cannot use both --domain (ngrok tunnel) and --public-url (direct); choose one exposure")
+	}
+
 	domain := ""
+	publicURL := ""
+	exposure := ExposureLocal
 	var err error
-	if strings.TrimSpace(opts.Domain) != "" {
+	switch {
+	case hasDomain:
+		exposure = ExposureTunnel
 		domain, err = NormalizeNgrokDomain(opts.Domain)
 		if err != nil {
 			return SetupResult{}, err
 		}
 		// Preflight ngrok before writing anything: a tunneled profile is useless
 		// without a working ngrok, and failing here is far clearer than a launchd
-		// error at service-start time.
+		// error at service-start time. This runs ONLY for the ngrok tunnel path.
 		checker := deps.NgrokChecker
 		if checker == nil {
 			checker = DefaultNgrokChecker{}
 		}
 		if err := checker.CheckNgrokReady(); err != nil {
+			return SetupResult{}, err
+		}
+	case hasPublicURL:
+		exposure = ExposureDirect
+		// Direct exposure: the user owns a public HTTPS endpoint reaching the
+		// proxy. ezyl3 only records it — no tunnel, no ngrok preflight.
+		publicURL, err = NormalizePublicURL(opts.PublicURL)
+		if err != nil {
 			return SetupResult{}, err
 		}
 	}
@@ -96,6 +115,13 @@ func RunSetup(opts SetupOptions, deps SetupDependencies) (SetupResult, error) {
 
 	profile, err := CreateManagedProfile(opts.Paths, secrets, domain)
 	if err != nil {
+		return SetupResult{}, err
+	}
+	// Record exposure on the profile. CreateManagedProfile sets the ngrok domain;
+	// here we set the mode and (for direct) the public URL, then persist.
+	profile.ExposureMode = exposure
+	profile.PublicURL = publicURL
+	if err := WriteProfileFile(opts.Paths.ProfileDir, profile); err != nil {
 		return SetupResult{}, err
 	}
 	executablePath := strings.TrimSpace(opts.ExecutablePath)
@@ -125,7 +151,10 @@ func RunSetup(opts SetupOptions, deps SetupDependencies) (SetupResult, error) {
 	}
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d/v1", profile.Port)
-	if domain != "" {
+	switch {
+	case publicURL != "":
+		baseURL = publicURL + "/v1"
+	case domain != "":
 		baseURL = "https://" + domain + "/v1"
 	}
 	return SetupResult{
@@ -141,8 +170,11 @@ func RunSetup(opts SetupOptions, deps SetupDependencies) (SetupResult, error) {
 
 func (r SetupResult) Summary() string {
 	tunnel := "local-only"
-	if r.Domain != "" {
+	switch {
+	case r.Domain != "":
 		tunnel = "ngrok: " + r.Domain
+	case r.Profile.PublicURL != "":
+		tunnel = "direct: " + r.Profile.PublicURL
 	}
 	python := "skipped"
 	if r.PythonInstalled {
@@ -152,7 +184,7 @@ func (r SetupResult) Summary() string {
 Runtime: %s
 Logs: %s
 LaunchAgents: %s
-Tunnel: %s
+Exposure: %s
 Python dependencies: %s
 Base URL: %s
 Models: litellm-auto, litellm-simple, litellm-medium, litellm-complex, litellm-reasoning

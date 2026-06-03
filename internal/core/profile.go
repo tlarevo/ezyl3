@@ -12,6 +12,11 @@ const (
 	ProfileModeExternal = "external"
 	ProfileFileName     = "profile.json"
 	LegacyMetadataFile  = "metadata.json"
+
+	// Exposure describes how the proxy is reached by a client (e.g. Cursor).
+	ExposureLocal  = "local"  // 127.0.0.1 only; not usable with Cursor
+	ExposureTunnel = "tunnel" // ezyl3 runs a tunnel (ngrok) to a public URL
+	ExposureDirect = "direct" // user-owned public HTTPS endpoint; ezyl3 only records it
 )
 
 type Profile struct {
@@ -22,7 +27,25 @@ type Profile struct {
 	Port           int          `json:"port"`
 	TunnelProvider string       `json:"tunnel_provider"`
 	Domain         string       `json:"domain,omitempty"`
+	ExposureMode   string       `json:"exposure_mode,omitempty"`
+	PublicURL      string       `json:"public_url,omitempty"`
 	Paths          ProfilePaths `json:"-"`
+}
+
+// Exposure returns the profile's exposure mode, inferring it for legacy profiles
+// written before the field existed: a recorded ngrok domain implies tunnel,
+// otherwise local.
+func (p Profile) Exposure() string {
+	if p.ExposureMode != "" {
+		return p.ExposureMode
+	}
+	if p.PublicURL != "" {
+		return ExposureDirect
+	}
+	if p.Domain != "" {
+		return ExposureTunnel
+	}
+	return ExposureLocal
 }
 
 type ProfileManager struct {
