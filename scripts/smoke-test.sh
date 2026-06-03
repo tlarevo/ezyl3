@@ -29,9 +29,18 @@ BIN="$SANDBOX/ezyl3"
 FAILURES=0
 
 cleanup() {
-  echo
-  echo "==> Cleaning up sandbox: $SANDBOX"
-  rm -rf "$SANDBOX"
+  # Defensive guard on a destructive op: only remove a real sandbox path under a
+  # temp dir. Never run rm -rf on an empty/unexpected value.
+  case "$SANDBOX" in
+    */ezyl3-smoke.*)
+      echo
+      echo "==> Cleaning up sandbox: $SANDBOX"
+      rm -rf "$SANDBOX"
+      ;;
+    *)
+      echo "WARNING: refusing to clean unexpected SANDBOX path: '${SANDBOX:-<unset>}'" >&2
+      ;;
+  esac
 }
 trap cleanup EXIT
 
@@ -66,7 +75,13 @@ section() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 # --- 0. build + unit tests --------------------------------------------------
 
 section "Build and unit tests"
-if go build -o "$BIN" ./cmd/ezyl3; then pass "go build"; else fail "go build"; fi
+if go build -o "$BIN" ./cmd/ezyl3; then
+  pass "go build"
+else
+  fail "go build"
+  echo "Cannot proceed without a working binary." >&2
+  exit 1
+fi
 if go test ./... >/dev/null 2>&1; then pass "go test ./..."; else fail "go test ./..."; fi
 
 # --- 1. direct exposure (--public-url) --------------------------------------
@@ -140,6 +155,9 @@ EOF
 read -r -p "Press Enter to launch the TUI..." _
 
 H="$(fresh_home tui)"
-HOME="$H" "$BIN" setup --skip-python-deps --public-url https://llm.example.com >/dev/null 2>&1
+if ! HOME="$H" "$BIN" setup --skip-python-deps --public-url https://llm.example.com >/dev/null 2>&1; then
+  echo "ERROR: setup failed for the TUI profile; not launching the TUI." >&2
+  exit 1
+fi
 HOME="$H" "$BIN" tui
 # cleanup() runs on EXIT.
