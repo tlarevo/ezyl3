@@ -256,7 +256,9 @@ func (m *model) refresh() {
 	m.cursorInfo, m.cursorErr = core.CursorSettingsInfo(m.runtime)
 	m.ngrokChecked = false
 	m.ngrokErr = nil
-	if m.cursorErr == nil && !m.cursorInfo.LocalOnly && m.deps.ngrok != nil {
+	// ngrok readiness applies only to a tunnel profile — not direct (the user owns
+	// the public endpoint) or local.
+	if m.cursorErr == nil && m.profile != nil && m.profile.Exposure() == core.ExposureTunnel && m.deps.ngrok != nil {
 		m.ngrokChecked = true
 		m.ngrokErr = m.deps.ngrok()
 	}

@@ -170,8 +170,11 @@ func RunSetup(opts SetupOptions, deps SetupDependencies) (SetupResult, error) {
 
 func (r SetupResult) Summary() string {
 	tunnel := "local-only"
-	if r.Domain != "" {
+	switch {
+	case r.Domain != "":
 		tunnel = "ngrok: " + r.Domain
+	case r.Profile.PublicURL != "":
+		tunnel = "direct: " + r.Profile.PublicURL
 	}
 	python := "skipped"
 	if r.PythonInstalled {
@@ -181,7 +184,7 @@ func (r SetupResult) Summary() string {
 Runtime: %s
 Logs: %s
 LaunchAgents: %s
-Tunnel: %s
+Exposure: %s
 Python dependencies: %s
 Base URL: %s
 Models: litellm-auto, litellm-simple, litellm-medium, litellm-complex, litellm-reasoning
