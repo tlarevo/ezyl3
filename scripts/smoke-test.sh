@@ -88,7 +88,7 @@ if go test ./... >/dev/null 2>&1; then pass "go test ./..."; else fail "go test 
 
 section "Direct exposure (--public-url)"
 H="$(fresh_home direct)"
-out="$(HOME="$H" "$BIN" setup --skip-python-deps --public-url https://llm.example.com 2>&1)"
+out="$(HOME="$H" "$BIN" setup --skip-python-deps --public-url https://llm.example.com </dev/null 2>&1)"
 assert_contains "setup succeeds" "$out" "Created managed profile"
 assert_contains "summary shows direct exposure" "$out" "Exposure: direct: https://llm.example.com"
 assert_contains "summary base URL has single /v1" "$out" "Base URL: https://llm.example.com/v1"
@@ -107,18 +107,18 @@ fi
 
 section "Public-URL validation"
 H="$(fresh_home validate)"
-err="$(HOME="$H" "$BIN" setup --skip-python-deps --public-url http://insecure.com 2>&1)"
+err="$(HOME="$H" "$BIN" setup --skip-python-deps --public-url http://insecure.com </dev/null 2>&1)"
 assert_contains "rejects http://" "$err" "must be https"
-err="$(HOME="$H" "$BIN" setup --skip-python-deps --public-url https://llm.example.com/v1 2>&1)"
+err="$(HOME="$H" "$BIN" setup --skip-python-deps --public-url https://llm.example.com/v1 </dev/null 2>&1)"
 assert_contains "rejects path-bearing URL (origin only)" "$err" "origin with no path"
-err="$(HOME="$H" "$BIN" setup --skip-python-deps --domain x.ngrok-free.dev --public-url https://y.com 2>&1)"
+err="$(HOME="$H" "$BIN" setup --skip-python-deps --domain x.ngrok-free.dev --public-url https://y.com </dev/null 2>&1)"
 assert_contains "rejects --domain + --public-url" "$err" "both"
 
 # --- 3. local-only still warns ----------------------------------------------
 
 section "Local-only exposure"
 H="$(fresh_home local)"
-out="$(HOME="$H" "$BIN" setup --skip-python-deps 2>&1)"
+out="$(HOME="$H" "$BIN" setup --skip-python-deps </dev/null 2>&1)"
 assert_contains "local-only base URL" "$out" "Base URL: http://127.0.0.1:4400/v1"
 cur="$(HOME="$H" "$BIN" cursor settings 2>&1)"
 assert_contains "local-only warns Cursor cannot use it" "$cur" "Cursor cannot use it"
@@ -155,7 +155,7 @@ EOF
 read -r -p "Press Enter to launch the TUI..." _
 
 H="$(fresh_home tui)"
-if ! HOME="$H" "$BIN" setup --skip-python-deps --public-url https://llm.example.com >/dev/null 2>&1; then
+if ! HOME="$H" "$BIN" setup --skip-python-deps --public-url https://llm.example.com </dev/null >/dev/null 2>&1; then
   echo "ERROR: setup failed for the TUI profile; not launching the TUI." >&2
   exit 1
 fi
