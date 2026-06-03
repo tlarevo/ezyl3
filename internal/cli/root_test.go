@@ -148,6 +148,41 @@ func TestSetupCreatesLocalOnlyProfileWithoutLeakingSecrets(t *testing.T) {
 	}
 }
 
+func TestSetupPublicURLCreatesDirectProfile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	out, err := execute("setup", "--skip-python-deps", "--public-url", "https://llm.example.com")
+	if err != nil {
+		t.Fatalf("setup --public-url returned error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "https://llm.example.com/v1") {
+		t.Fatalf("setup summary should show the direct base URL:\n%s", out)
+	}
+	runtime := filepath.Join(home, ".local", "share", "ezyl3", "profiles", "default")
+	// Direct exposure must not write an ngrok LaunchAgent.
+	if _, err := os.Stat(filepath.Join(home, "Library", "LaunchAgents", "com.ezyl3.default.ngrok.plist")); !os.IsNotExist(err) {
+		t.Fatalf("direct profile should not create an ngrok LaunchAgent: %v", err)
+	}
+	cur, err := execute("cursor", "settings", "--path", runtime)
+	if err != nil {
+		t.Fatalf("cursor settings error: %v\n%s", err, cur)
+	}
+	if !strings.Contains(cur, "https://llm.example.com/v1") || strings.Contains(cur, "WARNING") {
+		t.Fatalf("direct cursor settings should show public URL with no warning:\n%s", cur)
+	}
+}
+
+func TestSetupRejectsDomainAndPublicURLTogether(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	out, err := execute("setup", "--skip-python-deps", "--domain", "demo.ngrok-free.dev", "--public-url", "https://llm.example.com")
+	if err == nil || !strings.Contains(err.Error(), "both") {
+		t.Fatalf("expected rejection of --domain + --public-url, got err=%v out=%s", err, out)
+	}
+}
+
 func TestSetupRequiresForceToOverwriteManagedProfile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
