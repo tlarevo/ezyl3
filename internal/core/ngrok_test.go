@@ -19,3 +19,34 @@ func TestNormalizeNgrokDomain(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizePublicURL(t *testing.T) {
+	for _, tt := range []struct {
+		in   string
+		want string
+	}{
+		{"https://llm.example.com/v1", "https://llm.example.com/v1"},
+		{"https://llm.example.com", "https://llm.example.com"},
+		{"https://llm.example.com/", "https://llm.example.com"},
+	} {
+		got, err := NormalizePublicURL(tt.in)
+		if err != nil {
+			t.Fatalf("NormalizePublicURL(%q) error: %v", tt.in, err)
+		}
+		if got != tt.want {
+			t.Fatalf("NormalizePublicURL(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+	for _, bad := range []string{
+		"http://llm.example.com",
+		"llm.example.com",
+		"https://localhost/v1",
+		"https://127.0.0.1:4400/v1",
+		"https://[::1]/v1",
+		"",
+	} {
+		if _, err := NormalizePublicURL(bad); err == nil {
+			t.Fatalf("NormalizePublicURL(%q) should have errored", bad)
+		}
+	}
+}

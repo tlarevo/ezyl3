@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os/exec"
 	"regexp"
@@ -13,6 +14,42 @@ import (
 const ngrokCheckTimeout = 10 * time.Second
 
 var ngrokDomainPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.ngrok-free\.(dev|app)$`)
+
+// NormalizePublicURL validates a user-supplied public HTTPS endpoint for a direct
+// exposure profile and returns it without a trailing slash. Cursor requires a
+// public HTTPS target, so http, bare hosts, and loopback/localhost are rejected.
+func NormalizePublicURL(input string) (string, error) {
+	value := strings.TrimSpace(input)
+	if value == "" {
+		return "", fmt.Errorf("public URL is required")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "", fmt.Errorf("invalid public URL %q: %w", input, err)
+	}
+	if parsed.Scheme != "https" {
+		return "", fmt.Errorf("public URL must be https, got %q", input)
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("public URL must include a host, got %q", input)
+	}
+	if isLoopbackHost(host) {
+		return "", fmt.Errorf("public URL must be a public host, not localhost/loopback: %q", input)
+	}
+	return strings.TrimRight(value, "/"), nil
+}
+
+func isLoopbackHost(host string) bool {
+	lower := strings.ToLower(host)
+	if lower == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return true
+	}
+	return false
+}
 
 // ngrokSetupHelp is the actionable guidance shown when ngrok is not ready. It is
 // shared by setup preflight and doctor so the instructions stay consistent.
