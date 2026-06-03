@@ -25,9 +25,9 @@ func TestNormalizePublicURL(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"https://llm.example.com/v1", "https://llm.example.com/v1"},
 		{"https://llm.example.com", "https://llm.example.com"},
 		{"https://llm.example.com/", "https://llm.example.com"},
+		{"https://llm.example.com:8443", "https://llm.example.com:8443"},
 	} {
 		got, err := NormalizePublicURL(tt.in)
 		if err != nil {
@@ -40,9 +40,14 @@ func TestNormalizePublicURL(t *testing.T) {
 	for _, bad := range []string{
 		"http://llm.example.com",
 		"llm.example.com",
-		"https://localhost/v1",
-		"https://127.0.0.1:4400/v1",
-		"https://[::1]/v1",
+		"https://localhost",
+		"https://127.0.0.1:4400",
+		"https://[::1]",
+		// Origin-only contract: callers append /v1 and /health/liveliness, so a
+		// path (or query/fragment) must be rejected to avoid a doubled suffix.
+		"https://llm.example.com/v1",
+		"https://llm.example.com/api",
+		"https://llm.example.com/?x=1",
 		"",
 	} {
 		if _, err := NormalizePublicURL(bad); err == nil {

@@ -68,7 +68,7 @@ func Doctor(runtime Runtime) DoctorReport {
 	case ExposureDirect:
 		checks = append(checks, httpCheck("public endpoint",
 			strings.TrimRight(profile.PublicURL, "/")+"/health/liveliness",
-			"public endpoint not reachable: "+profile.PublicURL))
+			"public: "+profile.PublicURL))
 	case ExposureTunnel:
 		checks = append(checks,
 			httpCheck("ngrok inspector", "http://127.0.0.1:4040/api/tunnels", "ngrok is not reachable; check ezyl3 logs ngrok"),

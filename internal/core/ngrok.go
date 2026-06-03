@@ -16,8 +16,10 @@ const ngrokCheckTimeout = 10 * time.Second
 var ngrokDomainPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.ngrok-free\.(dev|app)$`)
 
 // NormalizePublicURL validates a user-supplied public HTTPS endpoint for a direct
-// exposure profile and returns it without a trailing slash. Cursor requires a
-// public HTTPS target, so http, bare hosts, and loopback/localhost are rejected.
+// exposure profile and returns it as a bare origin (scheme://host[:port]) with no
+// trailing slash. Callers append paths (`/v1`, `/health/liveliness`), so the URL
+// must be origin-only. Cursor requires a public HTTPS target, so http, bare
+// hosts, loopback/localhost, and any path/query/fragment are rejected.
 func NormalizePublicURL(input string) (string, error) {
 	value := strings.TrimSpace(input)
 	if value == "" {
@@ -37,7 +39,12 @@ func NormalizePublicURL(input string) (string, error) {
 	if isLoopbackHost(host) {
 		return "", fmt.Errorf("public URL must be a public host, not localhost/loopback: %q", input)
 	}
-	return strings.TrimRight(value, "/"), nil
+	if path := strings.Trim(parsed.Path, "/"); path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("public URL must be an origin with no path (e.g. https://llm.example.com), got %q", input)
+	}
+	// Reconstruct the bare origin so a trailing slash or empty path normalizes the
+	// same way; callers append /v1 and /health/liveliness.
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 func isLoopbackHost(host string) bool {
