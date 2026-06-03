@@ -19,7 +19,7 @@
 set -uo pipefail   # NOT -e: several checks intentionally expect non-zero exits.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || { echo "cannot cd to repo root: $REPO_ROOT" >&2; exit 1; }
 
 LAUNCH_TUI=1
 [[ "${1:-}" == "--no-tui" ]] && LAUNCH_TUI=0
