@@ -306,3 +306,30 @@ func TestCursorSettingsInfoDirectProfileUsesPublicURL(t *testing.T) {
 		t.Fatalf("direct settings should show public URL with no warning:\n%s", settings)
 	}
 }
+
+func TestDoctorDirectProfileProbesPublicURLNotNgrok(t *testing.T) {
+	runtime := NewRuntime(t.TempDir())
+	if err := WriteProfileFile(runtime.Path, Profile{
+		Name: "default", Mode: ProfileModeManaged,
+		ExposureMode: ExposureDirect, PublicURL: "https://llm.example.com",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	report := Doctor(runtime)
+	var sawDirect, sawNgrok bool
+	for _, c := range report.Checks {
+		if c.Name == "ngrok ready" || c.Name == "tunnel liveliness" {
+			sawNgrok = true
+		}
+		if c.Name == "public endpoint" {
+			sawDirect = true
+		}
+	}
+	if sawNgrok {
+		t.Fatalf("direct profile should not run ngrok checks: %#v", report.Checks)
+	}
+	if !sawDirect {
+		t.Fatalf("direct profile should probe the public endpoint: %#v", report.Checks)
+	}
+}
